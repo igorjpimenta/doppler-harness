@@ -34,16 +34,18 @@ git clone https://github.com/igorjpimenta/doppler-harness ~/.doppler
 node ~/.doppler/bin/doppler.mjs install opencode
 ```
 
-**Note for `npm install -g`:** the bridge is registered from inside
-`node_modules`, which npm owns. If you reinstall or move the package, re-run
-`doppler install opencode` — the config entry is a path, and a stale one leaves
-the engine silently inert.
+**If something has gone quiet, run `doppler doctor`.** It checks each place
+where "installed" and "working" can disagree — the bridge, the registration, and
+whether OpenCode actually loaded it — and says which one is broken. A hook that
+crashes, a policy that will not parse and a path that no longer exists are all
+silent at runtime; doctor is where they are not.
 
 ## The CLI
 
 ```
 doppler install opencode      # scaffold the personal root, register the bridge, verify
-doppler update                # re-register (and pull, under the clone install)
+doppler update                # refresh the engine, re-register (and pull, under a clone install)
+doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
 doppler version               # 2026.9.29
 doppler                       # usage
@@ -52,9 +54,9 @@ doppler                       # usage
 Installed with npm the command is `doppler`. Installed by cloning, it is
 `node ~/.doppler/bin/doppler.mjs` — the same program.
 
-`install` is idempotent: re-running it refreshes the config entry and never
-touches what you have written. `update` re-registers because the bridge is
-referenced by absolute path; under the clone install it also pulls.
+`install` is idempotent: re-running it refreshes the engine and the config entry
+and never touches what you have written. It also repairs a registration left
+pointing at an older location.
 
 `install` and `uninstall` take `opencode` and nothing else — asking for a
 harness that is not wired tells you so rather than printing usage and exiting.
@@ -100,6 +102,7 @@ export OPENCODE_BIN=/path/to/opencode
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md
+  opencode/doppler.js             the engine, refreshed on every install
 
 package root
   opencode/doppler.js             the ONLY file that knows OpenCode exists
@@ -111,6 +114,14 @@ The package ships no content. `install` creates the directories, seeds the
 policy *formats*, and registers the bridge; everything else is yours to write.
 That is one rule with a reason: a policy you did not choose is not a policy, and
 one that is silently overwritten on update is not yours either.
+
+The one file the installer does copy is the bridge itself, into
+`~/.doppler/opencode/`. It is a copy so that the path OpenCode is given points
+at *your* directory rather than at `node_modules`, which npm owns and may
+repoint on any reinstall. A registration into npm's directory survives the move
+and silently loads nothing. This copy is rewritten on every `install` and
+`update`, so it cannot drift from the package, and `doppler doctor` says so if
+it ever does.
 
 **Nothing is enforced until you write a hook.** A fresh install registers the
 bridge, which delivers your skills, agents and permission rules, and warns once
