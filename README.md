@@ -125,6 +125,6 @@ Conventions: Angular commits with scopes; CalVer `YYYY.M.D` in
 `package.json`; `main` receives code only via PRs.
 
 ```
-node --test test/     # the config splicer
+node --test test/     # the config splicer, agent parsing, hook decisions
 node --check hooks/<file>.mjs
 ```

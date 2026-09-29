@@ -14,7 +14,7 @@ node bin/doppler.mjs update                # pull the personal root, re-register
 node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
 node bin/doppler.mjs version
 
-node --test test/                          # the config splicer
+node --test test/                          # the config splicer, agent parsing, hook decisions
 node --check hooks/<file>.mjs
 opencode debug config                      # verify discovery
 opencode agent list | grep doppler-        # verify agents
