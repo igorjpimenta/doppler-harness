@@ -248,6 +248,24 @@ test("install repairs a stale registration", () => {
   }
 });
 
+test("install removes the pre-rename bridge from an upgraded root", () => {
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    // What a root upgraded from the .js era actually looks like: both files, the
+    // old one orphaned. Nothing loads it, so the hazard is only that it sits
+    // there looking authoritative if someone goes looking for the engine.
+    const old = path.join(m.home, ".doppler", "opencode", "doppler.js");
+    fs.writeFileSync(old, "// the bridge, before it was TypeScript\n");
+    assert.equal(fs.existsSync(old), true);
+    run(m, ["update"]);
+    assert.equal(fs.existsSync(old), false);
+    assert.equal(fs.existsSync(path.join(m.home, ".doppler", "opencode", "doppler.ts")), true);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("doctor warns rather than fails when there are no hooks", () => {
   // A legitimate state, and the one where a user believes something is enforced
   // and nothing is — so it is named, but it is not a broken install.
@@ -293,7 +311,8 @@ test("version and help work with no opencode and no personal root", () => {
   try {
     const v = run(m, ["version"]);
     assert.equal(v.status, 0);
-    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+$/);
+    // CalVer, with an optional -N for a same-day re-release.
+    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+(-\d+)?$/);
     const h = run(m, []);
     assert.equal(h.status, 0);
     assert.match(out(h), /usage: doppler/);

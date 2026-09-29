@@ -98,6 +98,11 @@ function writeRootManifest() {
 function syncBridge() {
   const next = fs.readFileSync(BRIDGE_SRC);
   const current = (() => { try { return fs.readFileSync(BRIDGE); } catch { return null; } })();
+  // The bridge was renamed .js -> .ts. An upgraded root still holds the old
+  // file, which nothing loads but which would sit there looking authoritative.
+  for (const old of [BRIDGE.replace(/\.ts$/, ".js")]) {
+    try { fs.unlinkSync(old); } catch {}
+  }
   if (current && current.equals(next)) return "current";
   fs.mkdirSync(path.dirname(BRIDGE), { recursive: true });
   fs.writeFileSync(BRIDGE, next);
