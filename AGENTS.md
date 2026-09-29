@@ -10,7 +10,8 @@ editing any of them takes effect on the next harness start with no re-install.
 
 ```
 node bin/doppler.mjs install opencode     # scaffold personal root → register the bridge → verify
-node bin/doppler.mjs update                # pull the personal root, re-register
+node bin/doppler.mjs update                # refresh the engine, re-register
+node bin/doppler.mjs doctor                # is any of it actually working?
 node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
 node bin/doppler.mjs version
 
@@ -37,8 +38,25 @@ on update is not theirs — so the first run seeds formats and stops there.
 - hooks, agents, skills — **not in the package at all.** They are the user's and
   live in the personal root; the bridge reads them at startup.
 
+The one copy the installer makes is the bridge itself, to
+`~/.doppler/opencode/doppler.js`. The path OpenCode is given must point at the
+user's own directory, not at a `node_modules` npm can repoint on any reinstall:
+such a registration survives the move and silently loads nothing, which is the
+failure `doctor` exists to name. The copy is rewritten on every install and
+update, so it cannot drift.
+
 Runtime state (session state) and machine-local wiring (`opencode.json` in the
 personal root) live in `~/.doppler`, never in this repo.
+
+### Why doctor exists
+
+Every way this can be installed but not working is silent: a registration
+pointing at a file that is gone, a config OpenCode ignores, a hook that crashes,
+an allowlist that will not parse. Each leaves the user's skills, agents,
+permissions and policy undelivered with no error anywhere. `doctor` is the one
+place each of those is named, and it must keep working when the install is
+broken — which is why the OpenCode CLI is resolved lazily and a missing one is
+reported rather than fatal.
 
 ### The hook protocol
 

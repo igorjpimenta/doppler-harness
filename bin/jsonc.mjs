@@ -123,6 +123,25 @@ function firstStringStart(s, from, to) {
   return -1;
 }
 
+// The quoted string elements of the array at `span`, as whole literals.
+//
+// For reading a value back out of a config that may carry comments. JSON.parse
+// cannot be used for that — a commented file is the normal case, not an edge
+// case — and a regex cannot be used either, because it cannot tell a `//` inside
+// a string from a comment, which a file:// URL is full of. This walks with the
+// same string-aware scanner the splicer uses.
+export function stringElements(text, span) {
+  if (!span) return [];
+  const out = [];
+  for (let i = span.start; i < span.end; i += 1) {
+    if (text[i] !== '"') continue;
+    const end = skipString(text, i);
+    out.push(text.slice(i, end));
+    i = end - 1;
+  }
+  return out;
+}
+
 // Remove one array element at [at, at+literal.length), together with whichever
 // comma separated it from a neighbour. Both directions are handled because
 // either may be the one that exists, and a leftover comma would be invalid
