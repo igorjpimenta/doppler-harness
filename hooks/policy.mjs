@@ -7,7 +7,7 @@
 // instead of a hook that fakes one. Run once at init by the bridge, not per
 // tool call — hence a compiler rather than a per-call decider.
 //
-//   in   the allowlist on disk, or a payload on stdin naming the harness
+//   in   nothing — it reads ../policy/allowlist.json from disk
 //   out  {"permission": {…}} to be merged into the harness's own config
 //
 // Patterns are GLOBS, passed through verbatim — never translated from regex.

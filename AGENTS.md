@@ -63,11 +63,12 @@ a default for standalone use.
 Exit 0 always, including on internal error: a broken hook has no opinion, so a
 bug in the engine cannot wedge every tool call.
 
-## Verified OpenCode behaviour
+## OpenCode facts this design depends on
 
-These were checked against opencode 1.18.33 rather than inferred; re-verify
-before relying on them, and prefer a native mechanism over a hook wherever one
-exists.
+Prefer a native mechanism over a hook wherever one exists. Re-verify these
+against the version you are targeting before relying on them — the commit
+history of the initial import records how each was checked, and which of them
+were checked by running rather than by reading.
 
 - `plugin: ["file://<abs>"]` loads, and a plugin file needs no `package.json`
   beside it. `opencode plugin <module>` does **not** accept a file path — it
@@ -78,7 +79,7 @@ exists.
   OpenCode has no `agents.roots`.
 - `tool.execute.before` **throwing** blocks the call before it runs, and the
   model receives the message. This is the only reliable deny surface.
-- `permission.ask` is declared in `@opencode-ai/plugin` but did **not** fire in
+- `permission.ask` is declared in `@opencode-ai/plugin` but does **not** fire in
   a non-interactive run, where OpenCode auto-rejects instead. Do not build on
   it: asks go through `config.permission` so the harness runs its own prompt.
 - `permission.*` is evaluated last-match-wins, so injected rules are appended
@@ -92,8 +93,7 @@ exists.
 - Commits: Angular convention **with scopes** — `feat(opencode):`,
   `fix(hooks):`, `chore(release):`, `docs(readme):`.
 - Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
-  `-N`. It was `.zcode-plugin/plugin.json` when ZCode was the target; the
-  manifest is gone, so the version now lives in `package.json`.
+  `-N`.
 - `main` receives code only via PRs. Every remote action — push, PR creation,
   merge — requires explicit owner approval before running.
 

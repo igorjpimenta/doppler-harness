@@ -18,7 +18,9 @@ function rootWith(policy) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-hook-"));
   fs.mkdirSync(path.join(home, "hooks"), { recursive: true });
   fs.mkdirSync(path.join(home, "policy"), { recursive: true });
-  for (const f of ["guard.mjs", "policy.mjs", "session-init.mjs", "block-co-authored-by.mjs", "block-claude-pr-footer.mjs", "source-guard.mjs"]) {
+  // Read the directory, not a list: a new hook then gets a seeded root and a
+  // malformed-payload check for free, and cannot be silently skipped by both.
+  for (const f of fs.readdirSync(HOOKS).filter((f) => f.endsWith(".mjs"))) {
     fs.copyFileSync(path.join(HOOKS, f), path.join(home, "hooks", f));
   }
   for (const [name, body] of Object.entries(policy)) {
@@ -212,7 +214,10 @@ test("session-init writes state under the personal root, not a harness's home", 
 });
 
 test("a malformed payload is a no-op, never a crash", () => {
-  for (const hook of ["guard.mjs", "source-guard.mjs", "block-co-authored-by.mjs", "policy.mjs"]) {
+  // Every hook, including the ones that read no input at all: a hook that throws
+  // on unexpected input exits non-zero, and a non-zero exit is the shape of
+  // "not installed".
+  for (const hook of fs.readdirSync(HOOKS).filter((f) => f.endsWith(".mjs"))) {
     const r = spawnSync("node", [path.join(HOOKS, hook)], { input: "{not json", encoding: "utf8" });
     assert.equal(r.status, 0, `${hook} must exit 0 on a malformed payload`);
   }

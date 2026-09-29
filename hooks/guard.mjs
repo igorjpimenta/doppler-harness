@@ -37,8 +37,8 @@ const MAX_SEARCH_PER_WINDOW = 5;
 const SEARCH_WINDOW_TURNS = 10;
 const MAX_DISTINCT_READS = 8;
 // Must stay strictly greater than MAX_DISTINCT_READS: each read advances `turn`
-// by 1, so `distinct` can never exceed READ_WINDOW_TURNS — equal values made
-// the deny branch mathematically unreachable (f669345, on the Claude original).
+// by 1, so `distinct` can never exceed READ_WINDOW_TURNS. Equal values make the
+// deny branch mathematically unreachable.
 const READ_WINDOW_TURNS = 16;
 
 const SEARCH_VERBS = new Set(["grep", "rg", "find", "fd", "ag", "ack"]);

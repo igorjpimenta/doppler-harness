@@ -270,10 +270,8 @@ function parseAgent(text) {
       config.permission = {};
       block = "permission";
     } else if (key === "tools") {
-      // Never forwarded: a list is not the object shape OpenCode validates, so
-      // it would be dropped on startup and the agent would keep every tool. It
-      // becomes denies instead, and an explicit permission: block still wins
-      // for the tools the author spelled out.
+      // Never forwarded (see TOOL_ALIASES above), and an explicit permission:
+      // block still wins for the tools the author spelled out.
       const derived = parseToolList(value);
       if (derived) {
         config.permission = { ...derived, ...(config.permission ?? {}) };

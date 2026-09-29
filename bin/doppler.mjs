@@ -2,7 +2,7 @@
 // doppler — installer CLI for the doppler-harness package.
 //
 // One repo, many harnesses. Each `install <harness>` wires that harness to the
-// personal root (--doppler-home, default ~/.doppler) using ONLY native
+// personal root (DOPPLER_HOME, default ~/.doppler) using ONLY native
 // mechanisms — no symlinks, no maintained copies of the root itself.
 //
 //   opencode  a `plugin` entry in the user's own config pointing at the
@@ -14,7 +14,7 @@
 //             re-install, because nothing was ever copied.
 //
 // Usage:
-//   doppler install opencode      # from a global npm install
+//   doppler install opencode
 //   node ~/.doppler/bin/doppler.mjs install opencode
 //   doppler update                # pull the personal root, then re-register
 //   doppler uninstall opencode
@@ -146,11 +146,9 @@ function opencodeCli() {
 const OC = opencodeCli();
 const sh = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "inherit"] }).toString().trim();
 
-// The previous installer trusted `plugins install` to mean success; it meant
-// nothing, and a plugin that was installed-but-disabled reported done anyway.
-// So read the state back. A config OpenCode refuses to parse means the bridge
-// never loads and every hook is silently inert — the one failure mode worth
-// failing loudly on.
+// Registering is not the same as working, and the difference is invisible: a
+// config OpenCode refuses to parse means the bridge never loads and every hook
+// is silently inert. That is the one failure mode worth failing loudly on.
 function verify() {
   try {
     sh(`${OC} debug config`);

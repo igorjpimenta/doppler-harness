@@ -94,16 +94,13 @@ function main() {
   const cmd = (payload.args?.command || "").trim();
   if (READ_ONLY.test(cmd)) noOpinion();
 
-  // The ASK tier is a judgment call the owner should make, and a bridge can only
-  // report it as a block — so the message names this marker as the way through.
-  // Honouring it here is what makes that message true; without it the model is
-  // told to re-run in a form that is blocked identically, forever.
+  // The bridge's ASK message tells the model to re-run with this marker, so
+  // honouring it here is what makes that message true.
   //
   // Trust rests on the owner, not the model: the marker is a claim of approval
-  // that anyone can type. That is the same bargain guard.mjs makes, and the
-  // reason the alternative — no escape at all — is worse: the tier would be
-  // indistinguishable from DENY, and the owner could not install a source they
-  // had just decided to trust.
+  // that anyone can type, which is the same bargain guard.mjs makes. Without an
+  // escape at all, this tier would be indistinguishable from DENY and the owner
+  // could not install a source they had just decided to trust.
   if (/^#\s*bypass:/mi.test(cmd)) noOpinion();
 
   const patterns = Array.isArray(payload.source_patterns) && payload.source_patterns.length

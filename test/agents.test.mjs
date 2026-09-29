@@ -44,8 +44,6 @@ test("a tools list denies everything it does not name", async () => {
   }))[0];
 
   assert.equal(name, "doppler-auditor");
-  // The regression this pins: dropped restriction, so the agent comes back with
-  // edit and write it was never given.
   for (const tool of ["edit", "write", "task", "webfetch"]) {
     assert.ok(denied(agent).includes(tool), `${tool} should be denied`);
   }

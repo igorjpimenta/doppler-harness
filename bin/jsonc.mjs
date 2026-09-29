@@ -123,21 +123,6 @@ function firstStringStart(s, from, to) {
   return -1;
 }
 
-// One past the last quoted string in s.slice(from, to). That string is the
-// array's final element, and its end is the only safe place to append after:
-// any comment trailing it runs to end of line, so writing there would put the
-// new element inside the comment and drop the separator. Scanning with
-// skipString is what makes `"http://x"` read as a value rather than a comment.
-function lastStringEnd(s, from, to) {
-  let end = -1;
-  for (let i = from; i < to; i += 1) {
-    if (s[i] !== '"') continue;
-    i = skipString(s, i) - 1;
-    end = i + 1;
-  }
-  return end;
-}
-
 // Remove one array element at [at, at+literal.length), together with whichever
 // comma separated it from a neighbour. Both directions are handled because
 // either may be the one that exists, and a leftover comma would be invalid
@@ -272,29 +257,25 @@ function needsComma(text, at) {
   return text.slice(0, at).trimEnd().endsWith(",") ? "" : ",";
 }
 
-// Leading whitespace of the line containing `i`.
-// One more level of indent than `indent`, in the same whitespace style: a
-// tab-indented config gets a tab, a space-indented one gets a space. Repeating
-// the whole run instead would double a 4-space indent to 8 and reflow the file.
+// A single character of the same whitespace kind as `indent`, i.e. one more
+// level. Returning the whole run instead would turn a 4-space indent into 8 and
+// visibly reflow the user's file.
 function childIndentOf(indent) {
   if (!indent) return "  ";
-  return indent[indent.length - 1].repeat(1);
+  return indent[indent.length - 1];
 }
 
+// Leading whitespace of the line containing `i`.
 function indentOfLine(text, i) {
   return /^[\t ]*/.exec(text.slice(text.lastIndexOf("\n", i - 1) + 1))[0];
 }
 
-// Indentation for a new element in a multi-line array: the indent its first
-// existing element already uses. That element is always the one right after the
-// opening bracket, so its line's leading whitespace is the array's own
-// convention — tabs stay tabs, and a bracket on its own line still nests one
-// level in. Falls back to the closing bracket's indent plus a level for an array
-// with no elements to copy from.
+// Indentation for a new element in a multi-line array: whatever the array's
+// first element already uses, so tabs stay tabs and the shape survives. The
+// bracket's own line is not a reliable guide — it is usually followed by a blank
+// line. Falls back to the closing bracket's indent for an array with no elements
+// to copy from.
 function elementIndentFor(text, open, close) {
-  // Copy the indent of the array's first element. The opening bracket is
-  // usually followed by a blank line, so search for the first element rather
-  // than reading the bracket's own line.
   const first = firstStringStart(text, open + 1, close);
   if (first >= 0) return indentOfLine(text, first);
   return childIndentOf(indentOfLine(text, close));
@@ -322,12 +303,6 @@ function splitTrailingComment(s) {
   return { comment: "", rest: s };
 }
 
-// End of the last non-string value in s.slice(from, to) — the fallback for a
-// config whose last top-level property is a number, boolean or null, which
-// lastStringEnd cannot see.
-// End of the last value in s.slice(from, to), skipping comments. Covers what
-// lastStringEnd cannot see: a final property whose value is a number, a
-// boolean, null, or a nested object.
 // End of the last *element* of the array whose interior is s.slice(from, to),
 // or -1 if it is empty. A nested value is stepped over whole, because
 // `["name", {opts}]` is one element and stopping inside the object would put the
