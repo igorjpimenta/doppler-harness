@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { insertElement, removeElements, removeWhere, topLevelValueSpan } from "../bin/jsonc.ts";
+import { insertElement, removeElements, removeWhere, topLevelValueSpan } from "../bin/jsonc.mjs";
 
 const E = '"file:///pkg/opencode/doppler.js"';
 const add = (text) => insertElement(text, topLevelValueSpan(text, "plugin"), "plugin", E);

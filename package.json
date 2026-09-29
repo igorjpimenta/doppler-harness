@@ -9,10 +9,10 @@
     "url": "git+https://github.com/igorjpimenta/doppler-harness.git"
   },
   "bin": {
-    "doppler": "bin/doppler.ts"
+    "doppler": "bin/doppler.mjs"
   },
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=18"
   },
   "files": [
     "bin/",

@@ -11,17 +11,19 @@
     "rewriteRelativeImportExtensions": true,
 
     "strict": true,
-    // Off deliberately: this package is a character-level text splicer, so
-    // every `s[i]` is `string | undefined` under this flag and the noise buries
-    // the errors that matter. The index is in range by construction here.
+    // Off deliberately: the splicer indexes into text character by character, so
+    // under this flag every `s[i]` is `string | undefined` and the noise buries
+    // the errors that matter. The index is in range by construction.
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
-    "verbatimModuleSyntax": true,
+    // Node strips types, it does not transform them: an enum or a parameter
+    // property would pass tsc and fail at load. This forbids exactly that class.
     "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["bin", "opencode", "test"],
+  "include": ["opencode"],
   "exclude": ["node_modules"]
 }

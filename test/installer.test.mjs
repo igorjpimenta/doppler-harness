@@ -17,11 +17,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DOPPLER = path.join(ROOT, "bin", "doppler.ts");
+const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
 
 // The product's own reader, so the assertions cannot be fooled by a config
 // this module cannot parse.
-const { stringElements, topLevelValueSpan } = await import(path.join(ROOT, "bin", "jsonc.ts"));
+const { stringElements, topLevelValueSpan } = await import(path.join(ROOT, "bin", "jsonc.mjs"));
 
 // A fake machine: its own HOME, its own personal root, its own opencode config.
 // OPENCODE_BIN points at a stub so the checks that shell out to OpenCode can

@@ -11,10 +11,7 @@ writing a bridge, not a second implementation.
 
 ## Quick start
 
-Requirements: macOS or Linux, Node 22.18+, `git`, and OpenCode installed.
-Node 22.18 is the first release that runs TypeScript without a flag, and the
-CLI is written in TypeScript and shipped as-is — there is no build step and no
-compiled output.
+Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
 npm install -g github:igorjpimenta/doppler-harness#2026.9.29
@@ -192,6 +189,12 @@ npm test         # 61 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 
-Types are checked by `tsc` and erased at load — OpenCode transpiles the bridge
-with Bun and Node strips the installer's. Nothing is compiled ahead of time, so
-there is no `dist/` to go stale.
+The bridge is TypeScript and is the only file typed against
+`@opencode-ai/plugin`; OpenCode transpiles it with Bun at load. There is no build
+step and no `dist/`, so there is nothing to go stale.
+
+The installer and the config splicer are JavaScript, and that is not a
+preference. Node refuses to strip types for files under `node_modules`, so a
+TypeScript entry point cannot be `npm install`ed at all — the documented install
+path would fail on every machine. The bridge escapes this only because it is
+copied to `~/.doppler/opencode/` and loaded from there.

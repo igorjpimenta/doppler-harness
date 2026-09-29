@@ -121,11 +121,14 @@ were checked by running rather than by reading.
   `fix(bridge):`, `chore(release):`, `docs(readme):`.
 - Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
   `-N`.
-- TypeScript, no build. `tsc --noEmit` is the only check; the shipped files are
-  what runs, with types erased at load. `erasableSyntaxOnly` is on, so no `enum`,
-  no `namespace`, no parameter properties. `noUncheckedIndexedAccess` is off on
-  purpose: this is a character-level text splicer and the flag buries real errors
-  under `string | undefined` at every index.
+- TypeScript for the bridge only, and no build. `tsc --noEmit` is the check; the
+  shipped file is what runs, types erased by Bun at load. `erasableSyntaxOnly`
+  is on, so no `enum`, no `namespace`, no parameter properties — those pass tsc
+  and fail at runtime, which is the whole failure mode here. `bin/` stays
+  JavaScript because Node refuses to strip types under `node_modules`, so a
+  TypeScript bin cannot be npm-installed at all. `noUncheckedIndexedAccess` is
+  off on purpose: the splicer indexes character by character and the flag buries
+  real errors under `string | undefined`.
 - `main` receives code only via PRs. Every remote action — push, PR creation,
   merge — requires explicit owner approval before running.
 
