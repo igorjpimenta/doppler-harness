@@ -30,9 +30,16 @@ fi
 
 say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
 
-if [ "$#" -gt 0 ]; then
-  exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
-fi
+  # The verbs are `install`/`uninstall` <harness>, so a bare harness name is
+  # expanded to `install <name>` rather than forwarded and rejected as unknown.
+  case "${1:-}" in
+    install|uninstall|update|doctor|version|"")
+      exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
+      ;;
+    *)
+      exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
+      ;;
+  esac
 
 cat <<'EOF'
 
