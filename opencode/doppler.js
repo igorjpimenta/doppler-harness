@@ -56,10 +56,19 @@ function personalRoot() {
   return path.join(os.homedir(), ".doppler");
 }
 
-const HOME = personalRoot();
-const HOOKS = path.join(HOME, "hooks");
-const AGENTS = path.join(HOME, "agents");
-const SKILLS = path.join(HOME, "skills");
+// Resolved per call, not once at import. OpenCode loads this module before
+// anything can set the environment, and a root captured at import time is a root
+// that is wrong for the rest of the session — which for a policy engine means
+// reading another directory's rules.
+function paths() {
+  const home = personalRoot();
+  return {
+    home,
+    hooks: path.join(home, "hooks"),
+    agents: path.join(home, "agents"),
+    skills: path.join(home, "skills"),
+  };
+}
 
 // The OpenCode CLI verbs that add a plugin source. Harness vocabulary, so it
 // is supplied here rather than guessed inside the hook; the hook still carries
@@ -79,7 +88,7 @@ const GUARDED = {
 // failure is "no opinion" and the tool proceeds: the same fail-open rule the
 // hooks themselves follow.
 function runHook(name, payload) {
-  const file = path.join(HOOKS, name);
+  const file = path.join(paths().hooks, name);
   if (!fs.existsSync(file)) return null;
   let res;
   try {
@@ -130,7 +139,7 @@ function enforce(input, output) {
 // {decision,reason} envelope the other hooks use. Read it the same way, but
 // tolerate the empty-output case.
 function compiledPermission() {
-  const file = path.join(HOOKS, "policy.mjs");
+  const file = path.join(paths().hooks, "policy.mjs");
   if (!fs.existsSync(file)) return null;
   let res;
   try {
@@ -166,7 +175,7 @@ function mergePermission(cfg, tool, rule) {
 
 function overlaySkillRoots() {
   try {
-    const o = JSON.parse(fs.readFileSync(path.join(HOME, "overlay.json"), "utf8"));
+    const o = JSON.parse(fs.readFileSync(path.join(paths().home, "overlay.json"), "utf8"));
     return Array.isArray(o.skillsRoots) ? o.skillsRoots.filter((p) => typeof p === "string") : [];
   } catch {
     return [];
@@ -179,8 +188,53 @@ function overlaySkillRoots() {
 // would be a hard ConfigInvalidError rather than a no-op.
 const AGENT_KEYS = new Set([
   "model", "variant", "temperature", "top_p", "description", "mode",
-  "hidden", "color", "disable", "steps", "options", "permission",
+  "hidden", "color", "disable", "steps", "options", "permission", "tools",
 ]);
+
+// Every tool an agent can be given or denied. A `tools: [A, B]` list is the
+// other spelling of "only A and B", so it has to be resolved against this
+// closed set — anything not named is denied.
+const TOOL_KEYS = [
+  "bash", "edit", "write", "read", "grep", "glob", "list", "patch", "task",
+  "todowrite", "todoread", "webfetch", "websearch", "question", "skill", "lsp",
+];
+
+// `tools: [Read, Bash, Grep, Glob]` names the tools an agent may use, and
+// implies every other one is off. OpenCode's own `tools` field is deprecated and
+// is what silently fails open here: a list is not the object shape it expects,
+// so it is dropped on validation and the agent keeps ALL tools — an agent
+// written read-only comes back with edit and write.
+//
+// So the list is translated into denies, which is the field the schema still
+// recommends and which survives validation. Aliases are mapped because
+// frontmatter conventionally uses the capitalised Claude-style names.
+const TOOL_ALIASES = {
+  bash: "bash", shell: "bash",
+  read: "read", view: "read",
+  edit: "edit", multiedit: "edit",
+  write: "write", create: "write",
+  grep: "grep", search: "grep",
+  glob: "glob", ls: "glob", list: "glob",
+  patch: "patch",
+  task: "task", agent: "task",
+  todowrite: "todowrite", todoread: "todoread",
+  webfetch: "webfetch", fetch: "webfetch",
+  websearch: "websearch",
+  question: "question",
+  skill: "skill",
+  lsp: "lsp",
+};
+
+function parseToolList(raw) {
+  const inner = raw.trim().replace(/^\[/, "").replace(/\]$/, "");
+  const names = inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  const allowed = new Set();
+  for (const n of names) allowed.add(TOOL_ALIASES[n.toLowerCase()] ?? n.toLowerCase());
+  if (!allowed.size) return null;
+  const permission = {};
+  for (const key of TOOL_KEYS) if (!allowed.has(key)) permission[key] = "deny";
+  return permission;
+}
 
 function coerce(raw) {
   const v = raw.trim();
@@ -215,6 +269,17 @@ function parseAgent(text) {
     if (key === "permission") {
       config.permission = {};
       block = "permission";
+    } else if (key === "tools") {
+      // Never forwarded: a list is not the object shape OpenCode validates, so
+      // it would be dropped on startup and the agent would keep every tool. It
+      // becomes denies instead, and an explicit permission: block still wins
+      // for the tools the author spelled out.
+      const derived = parseToolList(value);
+      if (derived) {
+        config.permission = { ...derived, ...(config.permission ?? {}) };
+        block = null;
+      }
+      continue;
     } else {
       config[key] = coerce(value);
     }
@@ -227,14 +292,14 @@ function parseAgent(text) {
 function readAgents() {
   let files;
   try {
-    files = fs.readdirSync(AGENTS).filter((f) => f.endsWith(".md")).sort();
+    files = fs.readdirSync(paths().agents).filter((f) => f.endsWith(".md")).sort();
   } catch {
     return [];
   }
   const agents = [];
   for (const file of files) {
     try {
-      const parsed = parseAgent(fs.readFileSync(path.join(AGENTS, file), "utf8"));
+      const parsed = parseAgent(fs.readFileSync(path.join(paths().agents, file), "utf8"));
       if (parsed) agents.push({ name: `doppler-${path.basename(file, ".md")}`, ...parsed });
     } catch {
       // one malformed agent must not cost the user the rest
@@ -260,7 +325,7 @@ export const DopplerHarness = async ({ client } = {}) => {
       // best-effort: a broken personal root degrades to "no doppler", never to
       // "opencode will not boot".
       try {
-        const skills = [SKILLS, ...overlaySkillRoots()].filter((p) => fs.existsSync(p));
+        const skills = [paths().skills, ...overlaySkillRoots()].filter((p) => fs.existsSync(p));
         if (skills.length) {
           cfg.skills = cfg.skills && typeof cfg.skills === "object" ? cfg.skills : {};
           const existing = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : [];
