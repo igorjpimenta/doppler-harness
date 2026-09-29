@@ -33,6 +33,17 @@ import { insertElement, removeWhere, stringElements, topLevelValueSpan } from ".
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = process.env.DOPPLER_HOME || path.join(os.homedir(), ".doppler");
 
+// Read from the package this file is running inside, not from a copy found
+// elsewhere: a second install on the same machine must not be able to answer
+// for this one. Node resolves symlinks before import.meta.url is read, so a
+// linked install reports its real target rather than the link.
+let PKG_VERSION = "unknown";
+try {
+  PKG_VERSION = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8")).version;
+} catch {
+  // package.json unreadable: the version is a nicety, the checks are not
+}
+
 // The bridge is registered from INSIDE the personal root, not from PKG. Under
 // `npm install -g` PKG is a path into node_modules that npm owns and may
 // repoint on any reinstall; a config entry pointing there survives the move and
@@ -254,6 +265,31 @@ function doctor() {
   } else {
     ok("root exists");
   }
+
+  // This is a declaration, not a check, and it cannot be one. A `doppler` that is
+  // missing, is a symlink to something deleted, or is a different program
+  // answering to the name never reaches any line below — there is no output to
+  // read and no exit code to trust. The last of those is the dangerous one: it
+  // can print "everything is fine" and exit 0. So there is nothing here for a
+  // user with the wrong CLI to have failed; the only useful move is for the
+  // right one to say who it is on its way past, and leave the comparison to them.
+  //
+  // A git checkout reports its branch because that is the case that reads as
+  // correct while being wrong: an install linked to a dev checkout serves
+  // whatever is checked out, so it can answer for a version never released.
+  // Deliberately not a failure — a checkout on a branch is a deliberate state,
+  // and failing on it would teach people to ignore the line that helps them.
+  const rel = (p) => p.replace(os.homedir(), "~");
+  let vcs = "";
+  try {
+    const branch = execSync(`git -C ${JSON.stringify(PKG)} rev-parse --abbrev-ref HEAD`, {
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString().trim();
+    if (branch && branch !== "HEAD") vcs = ` on ${branch}`;
+  } catch {
+    // not a checkout, or no git
+  }
+  ok("cli", `${rel(PKG)}${vcs} — ${PKG_VERSION}`);
 
   // The bridge is a copy refreshed on every install. A missing one means either
   // an uninstall or a half-finished install, and in both cases nothing runs.

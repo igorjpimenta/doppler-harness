@@ -199,6 +199,23 @@ test("doctor passes after a real install", () => {
   }
 });
 
+test("doctor names the CLI it is running from, with its version", () => {
+  // There is nothing for a test to assert about a CLI that is not the one
+  // running: it never reaches the code, so it cannot fail here. What this pins
+  // is the positive half — that the real thing names itself and its version,
+  // which is what lets a user compare it against the one they expected.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    const r = run(m, ["doctor"]);
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+    assert.match(out(r), /ok {4}cli — .* — \d{4}\.\d+\.\d+(-\d+)?$/m);
+    assert.match(out(r), new RegExp(`cli — .* — ${version.replace(/\./g, "\\.")}$`, "m"));
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("doctor names a registration pointing somewhere that no longer exists", () => {
   // The exact silent-inert case: the entry is present, the config parses, and
   // nothing is delivered.
