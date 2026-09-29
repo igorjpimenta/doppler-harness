@@ -1,0 +1,15 @@
+{
+  "_comment": "EXAMPLE extra guard rules, loaded by guard.mjs after the built-in tiers. The installer copies this to policy/guard-rules.json on first run; edit that file freely. Each rule is {decision:'deny'|'ask', pattern:<regex>, message:<string>}, matched against the Bash command. Note the escaping: in JSON, a regex word boundary is \\\\b and a literal dot is \\\\.",
+  "rules": [
+    {
+      "decision": "deny",
+      "pattern": "\\bcurl\\b[^\\n]*\\s(-X|--request)\\s+(POST|PUT|PATCH|DELETE)\\b",
+      "message": "write-method curl is denied by example rule. Use the dedicated API client for state-changing calls, or narrow the request to a read-only verb."
+    },
+    {
+      "decision": "ask",
+      "pattern": "\\bnpm\\s+publish\\b",
+      "message": "publishing a package is a one-way door: the version cannot be reused. Confirm the registry and the version first."
+    }
+  ]
+}
