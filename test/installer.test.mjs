@@ -200,9 +200,10 @@ test("doctor passes after a real install", () => {
 });
 
 test("doctor names the CLI it is running from, with its version", () => {
-  // A CLI on PATH that is not the one you meant produces no error anywhere —
-  // it just answers for different code. A doctor that never ran cannot report
-  // that, so the one thing available is to say where this one is running from.
+  // There is nothing for a test to assert about a CLI that is not the one
+  // running: it never reaches the code, so it cannot fail here. What this pins
+  // is the positive half — that the real thing names itself and its version,
+  // which is what lets a user compare it against the one they expected.
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
