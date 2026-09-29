@@ -1,0 +1,39 @@
+{
+  "name": "@igorjpimenta/doppler-harness",
+  "version": "2026.9.29",
+  "description": "One config root for every coding agent — connect OpenCode with a single CLI command. No symlinks, no copies.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igorjpimenta/doppler-harness.git"
+  },
+  "bin": {
+    "doppler": "bin/doppler.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "policy/",
+    "hooks/",
+    "opencode/",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE",
+    "install.sh"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "harness",
+    "opencode",
+    "config"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  }
+}
