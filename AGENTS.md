@@ -15,8 +15,8 @@ node bin/doppler.mjs doctor                # is any of it actually working?
 node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
 node bin/doppler.mjs version
 
-node --test test/                          # the config splicer, agent parsing, the bridge
-node --check opencode/doppler.js
+npm test                                    # the config splicer, agent parsing, bridge, installer
+npm run typecheck
 opencode debug config                      # verify discovery
 opencode agent list | grep doppler-        # verify agents
 ```
@@ -28,10 +28,22 @@ content.** What ships is the bridge, the installer, and the rule *formats*.
 A policy the user did not choose is not a policy, and one silently overwritten
 on update is not theirs — so the first run seeds formats and stops there.
 
-- `opencode/doppler.js` — the bridge. Engine-owned, read in place from the
-  package, never copied. It is the only file that knows OpenCode exists.
+- `opencode/doppler.ts` — the bridge. Engine-owned, read in place from the
+  package, never copied. It is the only file that knows OpenCode exists, and
+  the only file typed against `@opencode-ai/plugin`.
 - `bin/doppler.mjs` — the installer; the only entry point that touches harness
   config. `bin/jsonc.mjs` — the config splicer it uses.
+
+The bridge is TypeScript, transpiled by Bun at plugin load. `bin/` is
+JavaScript and cannot be otherwise: Node refuses to strip types for a file under
+`node_modules`, so a TypeScript entry point cannot be `npm install`ed at all. The
+bridge escapes that only because it is copied to `~/.doppler/opencode/` and
+loaded from there. Runtime imports stay `node:` builtins only;
+`@opencode-ai/plugin` is imported for *types* and erased, so an OpenCode that
+stopped shipping it could not break startup. Note that its published `Config`
+type has no `skills` field at the version we target, though the harness reads
+one — that single boundary is cast, and says so.
+
 - `policy/*.example.*` — formats, instantiated to real filenames on first run.
   A reader that finds no policy file falls back silently, so the installer
   materialises these rather than leaving the examples in place.
@@ -39,7 +51,7 @@ on update is not theirs — so the first run seeds formats and stops there.
   live in the personal root; the bridge reads them at startup.
 
 The one copy the installer makes is the bridge itself, to
-`~/.doppler/opencode/doppler.js`. The path OpenCode is given must point at the
+`~/.doppler/opencode/doppler.ts`. The path OpenCode is given must point at the
 user's own directory, not at a `node_modules` npm can repoint on any reinstall:
 such a registration survives the move and silently loads nothing, which is the
 failure `doctor` exists to name. The copy is rewritten on every install and
@@ -113,6 +125,14 @@ were checked by running rather than by reading.
   `fix(bridge):`, `chore(release):`, `docs(readme):`.
 - Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
   `-N`.
+- TypeScript for the bridge only, and no build. `tsc --noEmit` is the check; the
+  shipped file is what runs, types erased by Bun at load. `erasableSyntaxOnly`
+  is on, so no `enum`, no `namespace`, no parameter properties — those pass tsc
+  and fail at runtime, which is the whole failure mode here. `bin/` stays
+  JavaScript because Node refuses to strip types under `node_modules`, so a
+  TypeScript bin cannot be npm-installed at all. `noUncheckedIndexedAccess` is
+  off on purpose: the splicer indexes character by character and the flag buries
+  real errors under `string | undefined`.
 - `main` receives code only via PRs. Every remote action — push, PR creation,
   merge — requires explicit owner approval before running.
 

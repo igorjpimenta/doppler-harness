@@ -44,8 +44,8 @@ const HOME = process.env.DOPPLER_HOME || path.join(os.homedir(), ".doppler");
 // The file is a copy, refreshed on every install and update. That is a
 // deliberate exception to "no copies": a copy refreshed on every run cannot
 // drift, and the alternative is a registration that npm can invalidate.
-const BRIDGE = path.join(HOME, "opencode", "doppler.js");
-const BRIDGE_SRC = path.join(PKG, "opencode", "doppler.js");
+const BRIDGE = path.join(HOME, "opencode", "doppler.ts");
+const BRIDGE_SRC = path.join(PKG, "opencode", "doppler.ts");
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
 
@@ -98,6 +98,11 @@ function writeRootManifest() {
 function syncBridge() {
   const next = fs.readFileSync(BRIDGE_SRC);
   const current = (() => { try { return fs.readFileSync(BRIDGE); } catch { return null; } })();
+  // Only one engine may sit in the root: a stale sibling is not loaded, but it
+  // answers to the same name and would be picked up by anyone looking for it.
+  for (const old of [BRIDGE.replace(/\.ts$/, ".js")]) {
+    try { fs.unlinkSync(old); } catch {}
+  }
   if (current && current.equals(next)) return "current";
   fs.mkdirSync(path.dirname(BRIDGE), { recursive: true });
   fs.writeFileSync(BRIDGE, next);
@@ -128,7 +133,7 @@ function readConfig(p) {
 // unencoded URL simply fails to load.
 const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 
-const isDoppler = (literal) => /\/opencode\/doppler\.js"?$/.test(literal);
+const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
 
 function register() {
   const p = ocConfigPath();

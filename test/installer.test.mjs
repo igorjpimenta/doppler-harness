@@ -114,7 +114,7 @@ test("the bridge is registered from the personal root, never from node_modules",
     const [entry] = configOf(m).plugin;
     assert.ok(entry.startsWith("file://"), entry);
     const file = decodeURIComponent(new URL(entry).pathname);
-    assert.equal(file, path.join(home, "opencode", "doppler.js"));
+    assert.equal(file, path.join(home, "opencode", "doppler.ts"));
     assert.ok(fs.existsSync(file), "the registered path must exist");
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
@@ -154,7 +154,7 @@ test("install preserves the user's own plugins and comments", () => {
       .map((e) => JSON.parse(e));
     assert.equal(plugins.length, 2);
     assert.ok(plugins[0].includes("opencode-gemini-auth"), "the user's plugin is kept");
-    assert.match(plugins[1], /doppler\.js$/, "doppler's entry is appended");
+    assert.match(plugins[1], /doppler\.ts$/, "doppler's entry is appended");
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -205,7 +205,7 @@ test("doctor names a registration pointing somewhere that no longer exists", () 
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
-    fs.rmSync(path.join(m.home, ".doppler", "opencode", "doppler.js"));
+    fs.rmSync(path.join(m.home, ".doppler", "opencode", "doppler.ts"));
     const r = run(m, ["doctor"]);
     assert.equal(r.status, 1);
     assert.match(out(r), /registered path resolves/);
@@ -241,8 +241,25 @@ test("install repairs a stale registration", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["install", "opencode"]).status, 0);
     assert.equal(configOf(m).plugin.length, 1);
-    assert.match(configOf(m).plugin[0], /\.doppler\/opencode\/doppler\.js$/);
+    assert.match(configOf(m).plugin[0], /\.doppler\/opencode\/doppler\.ts$/);
     assert.equal(run(m, ["doctor"]).status, 0);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("install leaves exactly one engine in the root", () => {
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    // A sibling that is not the registered engine is a hazard whatever put it
+    // there: it answers to the same name and nothing loads it.
+    const old = path.join(m.home, ".doppler", "opencode", "doppler.js");
+    fs.writeFileSync(old, "// a stale engine\n");
+    assert.equal(fs.existsSync(old), true);
+    run(m, ["update"]);
+    assert.equal(fs.existsSync(old), false);
+    assert.equal(fs.existsSync(path.join(m.home, ".doppler", "opencode", "doppler.ts")), true);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -293,7 +310,8 @@ test("version and help work with no opencode and no personal root", () => {
   try {
     const v = run(m, ["version"]);
     assert.equal(v.status, 0);
-    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+$/);
+    // CalVer, with an optional -N for a same-day re-release.
+    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+(-\d+)?$/);
     const h = run(m, []);
     assert.equal(h.status, 0);
     assert.match(out(h), /usage: doppler/);
@@ -334,11 +352,11 @@ test("update refreshes the bridge from the package", () => {
   const home = path.join(m.home, ".doppler");
   try {
     run(m, ["install", "opencode"]);
-    const bridge = path.join(home, "opencode", "doppler.js");
+    const bridge = path.join(home, "opencode", "doppler.ts");
     fs.writeFileSync(bridge, "// stale engine\n");
     assert.equal(run(m, ["update"]).status, 0);
     assert.notEqual(fs.readFileSync(bridge, "utf8"), "// stale engine\n");
-    assert.equal(fs.readFileSync(bridge).equals(fs.readFileSync(path.join(ROOT, "opencode", "doppler.js"))), true);
+    assert.equal(fs.readFileSync(bridge).equals(fs.readFileSync(path.join(ROOT, "opencode", "doppler.ts"))), true);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }

@@ -14,7 +14,7 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.9.29
+npm install -g github:igorjpimenta/doppler-harness#2026.9.29-1
 doppler install opencode
 ```
 
@@ -47,7 +47,7 @@ doppler install opencode      # scaffold the personal root, register the bridge,
 doppler update                # refresh the engine, re-register (and pull, under a clone install)
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.9.29
+doppler version               # 2026.9.29-1
 doppler                       # usage
 ```
 
@@ -102,10 +102,10 @@ export OPENCODE_BIN=/path/to/opencode
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md
-  opencode/doppler.js             the engine, refreshed on every install
+  opencode/doppler.ts             the engine, refreshed on every install
 
 package root
-  opencode/doppler.js             the ONLY file that knows OpenCode exists
+  opencode/doppler.ts             the ONLY file that knows OpenCode exists
   bin/doppler.mjs                 the installer
   policy/*.example.*              formats, seeded on first run
 ```
@@ -180,11 +180,22 @@ the bridge.
 
 ## Development
 
-Source of truth is a dev checkout; `~/.doppler` is a clone — never edit there.
-Conventions: Angular commits with scopes; CalVer `YYYY.M.D` in
-`package.json`; `main` receives code only via PRs.
+Source of truth is a dev checkout; `~/.doppler` is installed from it and is
+copied — never edit there. Conventions: Angular commits with scopes; CalVer
+`YYYY.M.D` in `package.json`, with a `-N` suffix for a same-day re-release;
+`main` receives code only via PRs.
 
 ```
-node --test test/                        # the splicer, agent parsing, bridge
-node --check opencode/doppler.js
+npm test         # 62 tests: the splicer, agent parsing, bridge, installer
+npm run typecheck
 ```
+
+The bridge is TypeScript and is the only file typed against
+`@opencode-ai/plugin`; OpenCode transpiles it with Bun at load. There is no build
+step and no `dist/`, so there is nothing to go stale.
+
+The installer and the config splicer are JavaScript, and that is not a
+preference. Node refuses to strip types for files under `node_modules`, so a
+TypeScript entry point cannot be `npm install`ed at all — the documented install
+path would fail on every machine. The bridge escapes this only because it is
+copied to `~/.doppler/opencode/` and loaded from there.

@@ -9,7 +9,10 @@ import { insertElement, removeElements, removeWhere, topLevelValueSpan } from ".
 const E = '"file:///pkg/opencode/doppler.js"';
 const add = (text) => insertElement(text, topLevelValueSpan(text, "plugin"), "plugin", E);
 const drop = (text) => removeElements(text, topLevelValueSpan(text, "plugin"), [E]);
-const isDoppler = (literal) => /\/opencode\/doppler\.js"?$/.test(literal);
+// A plugin entry pointing at doppler's own bridge belongs to us to remove,
+// whatever extension it carries — leaving one behind is what strands the next
+// install pointing at a path that no longer resolves.
+const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
 const dropDoppler = (text) => removeWhere(text, topLevelValueSpan(text, "plugin"), isDoppler);
 
 test("finds a top-level value span", () => {
@@ -77,7 +80,9 @@ test("removes an element and the comma that joined it", () => {
 });
 
 test("removing every doppler entry leaves no dangling comma", () => {
-  const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.js",\n    "keep"\n  ]\n}\n';
+  // Both extensions in one array: they are the same entry to the reader, so a
+  // config carrying one of each must come back with neither.
+  const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.ts",\n    "keep"\n  ]\n}\n';
   assert.equal(dropDoppler(text), '{\n  "plugin": [\n    "mid",\n    "keep"\n  ]\n}\n');
   assert.deepEqual(JSON.parse(dropDoppler(text)).plugin, ["mid", "keep"]);
 });

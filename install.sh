@@ -18,7 +18,6 @@ command -v git  >/dev/null 2>&1 || die "git is required (https://git-scm.com)"
 command -v node >/dev/null 2>&1 || die "Node.js 18+ is required (https://nodejs.org)"
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 18 ] || die "Node.js 18+ required, found $(node -v)"
-
 if [ -d "$DOPPLER_HOME/.git" ]; then
   say "updating existing root at $DOPPLER_HOME"
   git -C "$DOPPLER_HOME" pull --ff-only --quiet
@@ -31,9 +30,16 @@ fi
 
 say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
 
-if [ "$#" -gt 0 ]; then
-  exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
-fi
+  # The verbs are `install`/`uninstall` <harness>, so a bare harness name is
+  # expanded to `install <name>` rather than forwarded and rejected as unknown.
+  case "${1:-}" in
+    install|uninstall|update|doctor|version|"")
+      exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
+      ;;
+    *)
+      exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
+      ;;
+  esac
 
 cat <<'EOF'
 
