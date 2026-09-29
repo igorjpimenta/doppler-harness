@@ -11,31 +11,53 @@ writing a bridge, not a second implementation.
 
 ## Quick start
 
-Requirements: macOS or Linux, `git`, Node 18+, and OpenCode installed.
+Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
+
+```bash
+npm install -g github:igorjpimenta/doppler-harness#2026.9.29
+doppler install opencode
+```
+
+Restart OpenCode, then write your first hook — nothing is enforced until you do.
+
+The package is not on the npm registry yet, so install it from git. Pin the tag
+or a commit; `main` will move. `install.sh` is the same thing as a plain clone:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/igorjpimenta/doppler-harness/main/install.sh | bash -s -- opencode
+```
+
+or clone by hand and call the script directly:
 
 ```bash
 git clone https://github.com/igorjpimenta/doppler-harness ~/.doppler
 node ~/.doppler/bin/doppler.mjs install opencode
 ```
 
-Restart OpenCode — done.
-
-The npm package is not published yet; `install.sh` does the clone for you:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/igorjpimenta/doppler-harness/main/install.sh | bash -s -- opencode
-```
-
-To update: `node ~/.doppler/bin/doppler.mjs update` (pulls, then re-registers).
+**Note for `npm install -g`:** the bridge is registered from inside
+`node_modules`, which npm owns. If you reinstall or move the package, re-run
+`doppler install opencode` — the config entry is a path, and a stale one leaves
+the engine silently inert.
 
 ## The CLI
 
 ```
-node ~/.doppler/bin/doppler.mjs install opencode     # connect
-node ~/.doppler/bin/doppler.mjs update                # pull the root, re-register
-node ~/.doppler/bin/doppler.mjs uninstall opencode    # disconnect
-node ~/.doppler/bin/doppler.mjs version
+doppler install opencode      # scaffold the personal root, register the bridge, verify
+doppler update                # re-register (and pull, under the clone install)
+doppler uninstall opencode    # remove the bridge entry; your files stay
+doppler version               # 2026.9.29
+doppler                       # usage
 ```
+
+Installed with npm the command is `doppler`. Installed by cloning, it is
+`node ~/.doppler/bin/doppler.mjs` — the same program.
+
+`install` is idempotent: re-running it refreshes the config entry and never
+touches what you have written. `update` re-registers because the bridge is
+referenced by absolute path; under the clone install it also pulls.
+
+`install` and `uninstall` take `opencode` and nothing else — asking for a
+harness that is not wired tells you so rather than printing usage and exiting.
 
 If the OpenCode CLI is not on your `PATH`, Doppler looks in `~/.opencode/bin`;
 otherwise point at it:
