@@ -8,14 +8,11 @@
 // but harness vocabulary — tool names, event names, which OpenCode CLI verbs add
 // a source — and delegates every decision to the user's hooks.
 //
-// Must stay dependency-free. It is imported by OpenCode's own loader, not
-// installed into the config directory's node_modules, so anything not built
-// into Bun fails to resolve at startup.
-//
-// It also has to stay out of node_modules. Bun transpiles it fine anywhere, but
-// Node refuses to strip types from a file under node_modules — so an npm-installed
-// copy of this engine cannot be run by node at all. It is only ever loaded by
-// Bun, from ~/.doppler/opencode/, which is why the installer copies it there.
+// Must stay dependency-free, and must stay out of node_modules. Bun transpiles
+// it wherever it sits, but Node refuses to strip types from a file under
+// node_modules, so a copy of this engine that npm owns could not be run by node
+// at all. That is why the installer copies it into ~/.doppler/opencode/ rather
+// than registering the package's own path.
 
 import fs from "node:fs";
 import os from "node:os";

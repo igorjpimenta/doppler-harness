@@ -9,8 +9,9 @@ import { insertElement, removeElements, removeWhere, topLevelValueSpan } from ".
 const E = '"file:///pkg/opencode/doppler.js"';
 const add = (text) => insertElement(text, topLevelValueSpan(text, "plugin"), "plugin", E);
 const drop = (text) => removeElements(text, topLevelValueSpan(text, "plugin"), [E]);
-// Both spellings are ours: an install made before the .ts rename leaves a .js
-// entry behind, and the reader has to recognise it to clear it.
+// A plugin entry pointing at doppler's own bridge belongs to us to remove,
+// whatever extension it carries — leaving one behind is what strands the next
+// install pointing at a path that no longer resolves.
 const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
 const dropDoppler = (text) => removeWhere(text, topLevelValueSpan(text, "plugin"), isDoppler);
 
@@ -79,8 +80,8 @@ test("removes an element and the comma that joined it", () => {
 });
 
 test("removing every doppler entry leaves no dangling comma", () => {
-  // Mixed .js and .ts on purpose: an install made before the rename leaves a .js
-  // entry behind, and the reader has to recognise both as ours to clear them.
+  // Both extensions in one array: they are the same entry to the reader, and a
+  // config can hold one of each after a rename. Neither should survive.
   const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.ts",\n    "keep"\n  ]\n}\n';
   assert.equal(dropDoppler(text), '{\n  "plugin": [\n    "mid",\n    "keep"\n  ]\n}\n');
   assert.deepEqual(JSON.parse(dropDoppler(text)).plugin, ["mid", "keep"]);

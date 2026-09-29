@@ -98,8 +98,8 @@ function writeRootManifest() {
 function syncBridge() {
   const next = fs.readFileSync(BRIDGE_SRC);
   const current = (() => { try { return fs.readFileSync(BRIDGE); } catch { return null; } })();
-  // The bridge was renamed .js -> .ts. An upgraded root still holds the old
-  // file, which nothing loads but which would sit there looking authoritative.
+  // Only one engine may sit in the root: a stale sibling is not loaded, but it
+  // answers to the same name and would be picked up by anyone looking for it.
   for (const old of [BRIDGE.replace(/\.ts$/, ".js")]) {
     try { fs.unlinkSync(old); } catch {}
   }

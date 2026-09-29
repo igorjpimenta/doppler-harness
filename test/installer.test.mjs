@@ -248,15 +248,14 @@ test("install repairs a stale registration", () => {
   }
 });
 
-test("install removes the pre-rename bridge from an upgraded root", () => {
+test("install leaves exactly one engine in the root", () => {
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
-    // What a root upgraded from the .js era actually looks like: both files, the
-    // old one orphaned. Nothing loads it, so the hazard is only that it sits
-    // there looking authoritative if someone goes looking for the engine.
+    // A sibling that is not the registered engine is a hazard whatever put it
+    // there: it answers to the same name and nothing loads it.
     const old = path.join(m.home, ".doppler", "opencode", "doppler.js");
-    fs.writeFileSync(old, "// the bridge, before it was TypeScript\n");
+    fs.writeFileSync(old, "// a stale engine\n");
     assert.equal(fs.existsSync(old), true);
     run(m, ["update"]);
     assert.equal(fs.existsSync(old), false);
