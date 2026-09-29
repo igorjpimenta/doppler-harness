@@ -16,7 +16,6 @@
   "files": [
     "bin/",
     "policy/",
-    "hooks/",
     "opencode/",
     "README.md",
     "AGENTS.md",

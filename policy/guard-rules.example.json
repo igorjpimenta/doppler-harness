@@ -1,5 +1,5 @@
 {
-  "_comment": "EXAMPLE extra guard rules, loaded by guard.mjs after the built-in tiers. The installer copies this to policy/guard-rules.json on first run; edit that file freely. Each rule is {decision:'deny'|'ask', pattern:<regex>, message:<string>}, matched against the Bash command. Note the escaping: in JSON, a regex word boundary is \\\\b and a literal dot is \\\\.",
+  "_comment": "EXAMPLE extra guard rules. No hook reads this file unless you write one that does — the installer copies it to policy/guard-rules.json on first run so the path exists. Each rule is {decision:'deny'|'ask', pattern:<regex>, message:<string>}; the pattern is matched by your hook, so regexes are fine here (unlike allowlist.json, whose globs are handed to the host verbatim). Note the escaping: in JSON, a regex word boundary is \\\\b and a literal dot is \\\\.",
   "rules": [
     {
       "decision": "deny",

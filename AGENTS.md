@@ -2,9 +2,9 @@
 
 One canonical config root serving many harnesses (OpenCode live) via native
 mechanisms only — no symlinks, no maintained copies *of the config root*. The
-policy engine is harness-agnostic by construction: nothing under `hooks/` or
-`policy/` names a harness, and everything is read in place, so editing a hook
-takes effect on the next harness start with no re-install.
+package ships **no content**: the policy, the agents, the skills and the
+permission rules all live in the personal root and are read in place, so
+editing any of them takes effect on the next harness start with no re-install.
 
 ## Commands
 
@@ -14,33 +14,28 @@ node bin/doppler.mjs update                # pull the personal root, re-register
 node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
 node bin/doppler.mjs version
 
-node --test test/                          # the config splicer, agent parsing, hook decisions
-node --check hooks/<file>.mjs
+node --test test/                          # the config splicer, agent parsing, the bridge
+node --check opencode/doppler.js
 opencode debug config                      # verify discovery
 opencode agent list | grep doppler-        # verify agents
 ```
 
 ## Architecture
 
-What ships in the package is deliberately narrow: the policy engine, the bridge
-that speaks one harness's dialect, and the rule formats. Content the user
-authors — agents, personal skills, their own hook edits — is never in this repo.
+One rule, and everything else follows from it: **the package contains no
+content.** What ships is the bridge, the installer, and the rule *formats*.
+A policy the user did not choose is not a policy, and one silently overwritten
+on update is not theirs — so the first run seeds formats and stops there.
 
-- `hooks/` — the standard hook set, shipped as **generalist defaults** (guard,
-  attribution blockers, permission policy, source-guard, session-init). The
-  installer copies them into the personal root once, on first run; after that
-  they are the user's files.
-- `policy/` — policy data. `source-allowlist.json`: trusted source patterns.
-  `allowlist.example.json` / `guard-rules.example.json`: rule formats,
-  instantiated to real filenames on first run. A reader that finds no policy
-  file falls back silently, so the installer materialises these rather than
-  leaving the examples in place.
 - `opencode/doppler.js` — the bridge. Engine-owned, read in place from the
   package, never copied. It is the only file that knows OpenCode exists.
 - `bin/doppler.mjs` — the installer; the only entry point that touches harness
   config. `bin/jsonc.mjs` — the config splicer it uses.
-- `agents/`, `skills/` — deliberately absent from the package. They are the
-  user's and live in the personal root; the bridge reads them at startup.
+- `policy/*.example.*` — formats, instantiated to real filenames on first run.
+  A reader that finds no policy file falls back silently, so the installer
+  materialises these rather than leaving the examples in place.
+- hooks, agents, skills — **not in the package at all.** They are the user's and
+  live in the personal root; the bridge reads them at startup.
 
 Runtime state (session state) and machine-local wiring (`opencode.json` in the
 personal root) live in `~/.doppler`, never in this repo.
@@ -55,13 +50,19 @@ out   {"decision":"deny"|"ask","reason":"…"}     (no output = no opinion)
 ```
 
 `tool` and `args` are OpenCode's vocabulary — lowercase tool names, camel-case
-arg keys — and a bridge for another harness maps its names in. `source-guard.mjs`
-additionally takes `source_patterns` in the payload for the same reason: which
-CLI verbs add a source is dialect, and the hook carries the OpenCode set only as
-a default for standalone use.
+arg keys — and a bridge for another harness maps its names in. `source_patterns`
+is in the payload for the same reason: which CLI verbs add a source is dialect,
+so the bridge supplies its own set.
+
+Every `.mjs` in the root's `hooks/` runs on every tool call, sorted by name, and
+each decides for itself whether it has an opinion. The bridge has no table of
+which hook handles which tool: that would put the engine's opinion about policy
+back into the engine. `.example.mjs` is excluded — it is documentation.
 
 Exit 0 always, including on internal error: a broken hook has no opinion, so a
-bug in the engine cannot wedge every tool call.
+bug in the engine cannot wedge every tool call. A non-zero exit is
+indistinguishable from a hook that is not installed, so the bridge warns at
+startup when it finds no hooks at all.
 
 ## OpenCode facts this design depends on
 
@@ -91,7 +92,7 @@ were checked by running rather than by reading.
 ## Conventions
 
 - Commits: Angular convention **with scopes** — `feat(opencode):`,
-  `fix(hooks):`, `chore(release):`, `docs(readme):`.
+  `fix(bridge):`, `chore(release):`, `docs(readme):`.
 - Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
   `-N`.
 - `main` receives code only via PRs. Every remote action — push, PR creation,
@@ -99,9 +100,10 @@ were checked by running rather than by reading.
 
 ## Known tier difference
 
-`guard.mjs` distinguishes DENY (a better alternative exists) from ASK (a
-judgment call the owner should make). A pre-tool hook can only allow or block,
-so the bridge reports ASK as a block whose message names the bypass. The
-data-driven ASK rules in `allowlist.json` are unaffected — they compile into
-`config.permission` and prompt for real. A harness with a permission-request
-hook would recover the tier; OpenCode does not have one.
+A hook distinguishes DENY (a better alternative exists) from ASK (a judgment
+call the owner should make). A pre-tool hook can only allow or block, so the
+bridge reports ASK as a block whose message names the bypass, and honouring that
+marker is the hook's job. The data-driven ASK rules in `allowlist.json` are
+unaffected — they compile into `config.permission` and prompt for real. A
+harness with a permission-request hook would recover the tier; OpenCode does not
+have one.

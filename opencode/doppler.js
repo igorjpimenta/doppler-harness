@@ -1,11 +1,12 @@
 // doppler → OpenCode bridge. Engine-owned: read in place, never edited, never
-// copied into ~/.config/opencode. The editable half is the personal root's
-// hooks/ and policy/, which this only execs.
+// copied into ~/.config/opencode. The personal root holds everything else —
+// the hooks it execs, the policy it compiles — and this package ships none of
+// it.
 //
 // It exists because OpenCode has no declarative hook registration: a plugin is
-// the only place a shared policy engine can reach the tool loop. So the bridge
-// owns nothing but harness vocabulary — tool names, event names, which
-// OpenCode CLI verbs add a source — and delegates every decision to the hooks.
+// the only place a policy can reach the tool loop. So the bridge owns nothing
+// but harness vocabulary — tool names, event names, which OpenCode CLI verbs add
+// a source — and delegates every decision to the user's hooks.
 //
 // Must stay dependency-free. It is imported by OpenCode's own loader, not
 // installed into the config directory's node_modules, so anything not built
@@ -71,25 +72,30 @@ function paths() {
 }
 
 // The OpenCode CLI verbs that add a plugin source. Harness vocabulary, so it
-// is supplied here rather than guessed inside the hook; the hook still carries
-// this same set as a default for standalone use.
+// is supplied to the hook rather than guessed inside it.
 const SOURCE_PATTERNS = ["\\bopencode\\s+plugin\\b"];
 
-// Per-tool hook sets. The attribution blockers and the source guard only care
-// about shell text; guard.mjs also rates the read tool. Anything else runs no
-// hook at all rather than paying four spawns to be told "not my tool".
-const UNBYPASSABLE = ["block-co-authored-by.mjs", "block-claude-pr-footer.mjs"];
-const GUARDED = {
-  bash: [...UNBYPASSABLE, "source-guard.mjs", "guard.mjs"],
-  read: ["guard.mjs"],
-};
+// Every .mjs in the personal root's hooks/ is run for every tool call, in
+// sorted order, and each decides for itself whether it has an opinion — the
+// payload carries the tool name, so a hook that only cares about shell text can
+// return nothing immediately. The alternative, a filename-per-concern table
+// here, would put the engine's opinion about policy back into the engine.
+function hookFiles() {
+  try {
+    return fs.readdirSync(paths().hooks)
+      // `.example.mjs` is seeded as documentation, matching the policy/ naming:
+      // running it would enforce the example's rules, which the user never chose.
+      .filter((f) => f.endsWith(".mjs") && !f.endsWith(".example.mjs"))
+      .sort();
+  } catch {
+    return [];
+  }
+}
 
 // A hook that is missing, slow, or broken must not wedge every tool call. Any
 // failure is "no opinion" and the tool proceeds: the same fail-open rule the
 // hooks themselves follow.
-function runHook(name, payload) {
-  const file = path.join(paths().hooks, name);
-  if (!fs.existsSync(file)) return null;
+function runHook(file, payload) {
   let res;
   try {
     res = spawnSync(NODE, [file], {
@@ -117,16 +123,16 @@ const ASK_NOTE =
   "`# bypass: <reason>`, or set DOPPLER_BYPASS_GUARDS=1 for the session.";
 
 function enforce(input, output) {
-  const hooks = GUARDED[input.tool];
-  if (!hooks) return;
+  const files = hookFiles();
+  if (!files.length) return;
   const payload = {
     session_id: input.sessionID,
     tool: input.tool,
     args: output.args ?? {},
     source_patterns: SOURCE_PATTERNS,
   };
-  for (const hook of hooks) {
-    const decision = runHook(hook, payload);
+  for (const file of files) {
+    const decision = runHook(path.join(paths().hooks, file), payload);
     if (decision?.decision === "deny") throw new Error(decision.reason);
     if (decision?.decision === "ask") throw new Error(decision.reason + ASK_NOTE);
   }
@@ -134,26 +140,42 @@ function enforce(input, output) {
 
 // --- policy/allowlist.json → OpenCode's own permission engine ---------------
 
-// policy.mjs is a compiler, not a per-call decider: it emits
-// {permission:{…}} on stdout and nothing else, so it does not fit the
-// {decision,reason} envelope the other hooks use. Read it the same way, but
-// tolerate the empty-output case.
+// Patterns are globs, passed through verbatim — never translated from regex.
+// A lossy regex→glob conversion fails open: an "ask" rule that silently stops
+// matching is an unchecked command, and a policy that quietly stops applying is
+// worse than no policy. A user who needs regexes wants a hook, not this map.
+//
+// A missing or malformed allowlist yields an empty map rather than an
+// exception, and no catch-all is ever emitted: doppler widens nothing, so an
+// unmatched command keeps the host's own default instead of inheriting
+// something doppler chose.
 function compiledPermission() {
-  const file = path.join(paths().hooks, "policy.mjs");
-  if (!fs.existsSync(file)) return null;
-  let res;
+  let rules;
   try {
-    res = spawnSync(NODE, [file], { input: "{}", encoding: "utf8", timeout: 5000 });
+    rules = JSON.parse(fs.readFileSync(path.join(paths().home, "policy", "allowlist.json"), "utf8"));
   } catch {
     return null;
   }
-  if (res.status !== 0 || !res.stdout) return null;
-  try {
-    const parsed = JSON.parse(res.stdout);
-    return parsed?.permission && typeof parsed.permission === "object" ? parsed.permission : null;
-  } catch {
-    return null;
+  const permission = {};
+
+  for (const t of rules.tools?.allow ?? []) {
+    if (typeof t === "string" && t) permission[t] = "allow";
   }
+
+  // ask before allow, so on an overlap the ask is the one the user has to see:
+  // a broad allow must not swallow a narrow ask.
+  const bash = {};
+  for (const r of rules.ask ?? []) {
+    if (typeof r?.pattern !== "string" || !r.pattern) continue;
+    bash[r.pattern] = "ask";
+  }
+  for (const r of rules.allow ?? []) {
+    if (typeof r?.pattern !== "string" || !r.pattern) continue;
+    if (bash[r.pattern] === undefined) bash[r.pattern] = "allow";
+  }
+  if (Object.keys(bash).length) permission.bash = bash;
+
+  return permission;
 }
 
 // OpenCode evaluates the LAST matching pattern, so doppler's rules are
@@ -171,6 +193,15 @@ function mergePermission(cfg, tool, rule) {
     : current ? { "*": current }
       : {};
   cfg.permission[tool] = { ...base, ...rule };
+}
+
+// A directory that exists and has something in it.
+function hasEntries(dir) {
+  try {
+    return fs.readdirSync(dir).length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function overlaySkillRoots() {
@@ -306,15 +337,29 @@ function readAgents() {
   return agents;
 }
 
+function report(message, level, client) {
+  console.error(`doppler: ${message}`);
+  client?.app?.log?.({ body: { service: "doppler-harness", level, message } }).catch?.(() => {});
+}
+
 export const DopplerHarness = async ({ client } = {}) => {
-  // Fail-open means a broken runtime is indistinguishable from a permissive
-  // one at runtime, so say so once, loudly, at the only moment we can still
-  // tell the difference.
+  // Fail-open means a broken runtime is indistinguishable from a permissive one
+  // at runtime, so say so once, at the only moment the difference is visible.
   if (!nodeUsable()) {
-    const message = `doppler: cannot run node (${NODE}), so every policy hook is inert — ` +
-      "install Node 18+ on PATH or set DOPPLER_NODE. Nothing is being enforced.";
-    console.error(message);
-    client?.app?.log?.({ body: { service: "doppler-harness", level: "error", message } }).catch?.(() => {});
+    report(
+      `cannot run node (${NODE}), so every policy hook is inert — install ` +
+      "Node 18+ on PATH or set DOPPLER_NODE. Nothing is being enforced.",
+      "error", client,
+    );
+  } else if (hookFiles().length === 0) {
+    // No hooks is a legitimate state — this package ships no policy, the root
+    // supplies it — but it is indistinguishable from a typo, and a silently
+    // inert policy engine is the one outcome nobody can see. So say which it is.
+    report(
+      `no hooks in ${paths().hooks}, so nothing is being enforced. Expected if ` +
+      "you have not written any; see the README for the protocol.",
+      "warn", client,
+    );
   }
 
   return {
@@ -323,7 +368,10 @@ export const DopplerHarness = async ({ client } = {}) => {
       // best-effort: a broken personal root degrades to "no doppler", never to
       // "opencode will not boot".
       try {
-        const skills = [paths().skills, ...overlaySkillRoots()].filter((p) => fs.existsSync(p));
+        // A root with nothing in it is a dead path in the config, and OpenCode
+        // grants an external_directory allowance per registered root — so an
+        // empty one is a cost with no benefit.
+        const skills = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
         if (skills.length) {
           cfg.skills = cfg.skills && typeof cfg.skills === "object" ? cfg.skills : {};
           const existing = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : [];
@@ -352,9 +400,16 @@ export const DopplerHarness = async ({ client } = {}) => {
     },
 
     event: async ({ event }) => {
+      // A session-start hook, if the user wrote one, is a hook like any other
+      // and is told what it is for here. It gets the same payload shape, so one
+      // hook can serve both roles if it wants.
       if (event.type !== "session.created") return;
       const id = event.properties?.info?.id;
-      if (id) runHook("session-init.mjs", { session_id: id });
+      if (!id) return;
+      const payload = { session_id: id, event: "session.created" };
+      for (const file of hookFiles()) {
+        runHook(path.join(paths().hooks, file), payload);
+      }
     },
   };
 };

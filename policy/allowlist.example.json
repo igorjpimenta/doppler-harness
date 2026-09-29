@@ -32,5 +32,5 @@
       "webfetch"
     ]
   },
-  "_comment": "EXAMPLE permission rules for policy.mjs, which compiles them into the harness's own permission engine (OpenCode's config.permission) at startup. The installer copies this to policy/allowlist.json on first run; edit that file freely. Patterns are GLOBS, not regexes, and are passed through verbatim — write what you would type to the shell. They are leading-* wildcards on purpose: over-matching costs an unnecessary prompt, under-matching silently skips a rule you thought was armed. No catch-all is emitted, so anything unmatched keeps your own default."
+  "_comment": "EXAMPLE permission rules, compiled by the bridge into the harness's own permission engine (OpenCode's config.permission) at startup. The installer copies this to policy/allowlist.json on first run; edit that file freely. Patterns are GLOBS, not regexes, and are passed through verbatim — write what you would type to the shell. They are leading-* wildcards on purpose: over-matching costs an unnecessary prompt, under-matching silently skips a rule you thought was armed. No catch-all is emitted, so anything unmatched keeps your own default."
 }

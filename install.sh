@@ -41,5 +41,8 @@ Connect a harness (restart it afterwards):
 
   node ~/.doppler/bin/doppler.mjs install opencode
 
+Then write your first hook — nothing is enforced until you do. Copy
+policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.
+
 Docs: https://github.com/igorjpimenta/doppler-harness
 EOF

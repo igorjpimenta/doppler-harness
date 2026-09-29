@@ -40,29 +40,27 @@ function packageJson() {
   return JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8"));
 }
 
-// First-run scaffold: the personal root belongs to the user. The engine copies
-// its DEFAULT hook implementations + policy examples there once — after that
-// they are the user's files, edited freely, never overwritten. That is also
-// what makes the hooks the one implementation every harness shares: the
-// bridge execs whatever is in the personal root, not whatever is in the package.
+// First-run scaffold: the personal root belongs to the user, and nothing in
+// this package is content. hooks/, agents/ and skills/ are created empty and
+// stay that way — the user writes the hooks, and the bridge execs whatever it
+// finds there. Only the policy *format* examples are seeded, because a format
+// with no example is not a format.
 function scaffold() {
   const marker = path.join(HOME, ".doppler-initialized");
   if (fs.existsSync(marker)) return "existing";
   for (const d of ["hooks", "agents", "skills", "policy"]) fs.mkdirSync(path.join(HOME, d), { recursive: true });
-  for (const f of fs.readdirSync(path.join(PKG, "hooks"))) {
-    if (f.startsWith(".")) continue;
-    const dst = path.join(HOME, "hooks", f);
-    if (!fs.existsSync(dst)) fs.copyFileSync(path.join(PKG, "hooks", f), dst);
-  }
-  // Policy examples become real files on first run: the readers look for the
-  // plain name, so an untouched example means the policy is inert rather than
-  // absent.
+  // Every policy file here is an example, and each becomes its real name on
+  // first run: the reader looks for the plain name, so an untouched example
+  // means the policy is inert rather than absent. The hook example goes to
+  // hooks/ instead, and keeps its `.example` suffix — a hook is only policy once
+  // the user renames it, and the bridge skips `.example.mjs` so seeding one
+  // cannot enforce rules nobody chose.
   for (const f of fs.readdirSync(path.join(PKG, "policy"))) {
-    if (f.endsWith(".example.json")) {
-      const dst = path.join(HOME, "policy", f.replace(".example", ""));
+    if (f.endsWith(".example.mjs")) {
+      const dst = path.join(HOME, "hooks", f);
       if (!fs.existsSync(dst)) fs.copyFileSync(path.join(PKG, "policy", f), dst);
-    } else {
-      const dst = path.join(HOME, "policy", f);
+    } else if (f.endsWith(".example.json")) {
+      const dst = path.join(HOME, "policy", f.replace(".example", ""));
       if (!fs.existsSync(dst)) fs.copyFileSync(path.join(PKG, "policy", f), dst);
     }
   }
