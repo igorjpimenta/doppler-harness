@@ -80,8 +80,8 @@ test("removes an element and the comma that joined it", () => {
 });
 
 test("removing every doppler entry leaves no dangling comma", () => {
-  // Both extensions in one array: they are the same entry to the reader, and a
-  // config can hold one of each after a rename. Neither should survive.
+  // Both extensions in one array: they are the same entry to the reader, so a
+  // config carrying one of each must come back with neither.
   const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.ts",\n    "keep"\n  ]\n}\n';
   assert.equal(dropDoppler(text), '{\n  "plugin": [\n    "mid",\n    "keep"\n  ]\n}\n');
   assert.deepEqual(JSON.parse(dropDoppler(text)).plugin, ["mid", "keep"]);
