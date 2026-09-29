@@ -1,0 +1,15 @@
+{
+  "_comment": "EXAMPLE extra guard rules. No hook reads this file unless you write one that does — the installer copies it to policy/guard-rules.json on first run so the path exists. Each rule is {decision:'deny'|'ask', pattern:<regex>, message:<string>}; the pattern is matched by your hook, so regexes are fine here (unlike allowlist.json, whose globs are handed to the host verbatim). Note the escaping: in JSON, a regex word boundary is \\\\b and a literal dot is \\\\.",
+  "rules": [
+    {
+      "decision": "deny",
+      "pattern": "\\bcurl\\b[^\\n]*\\s(-X|--request)\\s+(POST|PUT|PATCH|DELETE)\\b",
+      "message": "write-method curl is denied by example rule. Use the dedicated API client for state-changing calls, or narrow the request to a read-only verb."
+    },
+    {
+      "decision": "ask",
+      "pattern": "\\bnpm\\s+publish\\b",
+      "message": "publishing a package is a one-way door: the version cannot be reused. Confirm the registry and the version first."
+    }
+  ]
+}

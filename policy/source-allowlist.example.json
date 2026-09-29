@@ -1,0 +1,8 @@
+{
+  "_comment": "Trusted source patterns (substring match against the source argument of a source-adding command). A source that ships skills, agents, hooks or MCP servers runs in every future session, so anything unlisted asks. Ships with generic infra defaults ONLY — add your own (e.g. your npm scope, your own repos) locally or via PR.",
+  "trusted": [
+    "~/.doppler/",
+    "localhost",
+    "127.0.0.1"
+  ]
+}
