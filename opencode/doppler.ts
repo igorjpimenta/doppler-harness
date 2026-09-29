@@ -11,13 +11,18 @@
 // Must stay dependency-free. It is imported by OpenCode's own loader, not
 // installed into the config directory's node_modules, so anything not built
 // into Bun fails to resolve at startup.
+//
+// It also has to stay out of node_modules. Bun transpiles it fine anywhere, but
+// Node refuses to strip types from a file under node_modules — so an npm-installed
+// copy of this engine cannot be run by node at all. It is only ever loaded by
+// Bun, from ~/.doppler/opencode/, which is why the installer copies it there.
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import type { Config, Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
+import type { Config, Plugin, PluginInput } from "@opencode-ai/plugin";
 
 // The hooks are standalone node scripts, so exec them with node — NOT with
 // process.execPath. Under Bun, which is what OpenCode's plugin runtime is,
@@ -26,6 +31,24 @@ import type { Config, Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 // one of them fails open. That is a policy engine that reports success and
 // enforces nothing, so node is resolved by name and its usability is checked
 // once at startup rather than trusted.
+const NODE = (() => {
+  if (process.env.DOPPLER_NODE) return process.env.DOPPLER_NODE;
+  try {
+    return execFileSync("which", ["node"], { encoding: "utf8" }).trim() || "node";
+  } catch {
+    // no `which` (or nothing on PATH): only trust execPath if it really is node
+    return /(^|\/)node[0-9.]*$/.test(process.execPath) ? process.execPath : "node";
+  }
+})();
+
+function nodeUsable() {
+  try {
+    return spawnSync(NODE, ["--version"]).status === 0;
+  } catch {
+    return false;
+  }
+}
+
 // What a hook is handed, and what it may answer. This is doppler's own protocol,
 // not OpenCode's: OpenCode's tool-call vocabulary is mapped in by `enforce`,
 // and a bridge for another harness maps its own in the same place.
@@ -49,24 +72,6 @@ type Allowlist = {
   ask?: { pattern: string; note?: string }[];
   tools?: { allow?: string[] };
 };
-
-const NODE = (() => {
-  if (process.env.DOPPLER_NODE) return process.env.DOPPLER_NODE;
-  try {
-    return execFileSync("which", ["node"], { encoding: "utf8" }).trim() || "node";
-  } catch {
-    // no `which` (or nothing on PATH): only trust execPath if it really is node
-    return /(^|\/)node[0-9.]*$/.test(process.execPath) ? process.execPath : "node";
-  }
-})();
-
-function nodeUsable() {
-  try {
-    return spawnSync(NODE, ["--version"]).status === 0;
-  } catch {
-    return false;
-  }
-}
 
 
 // The personal root is a fixed absolute path, but a plugin gets no access to
@@ -398,16 +403,16 @@ export const DopplerHarness: Plugin = async ({ client }) => {
       // A throw here would be an OpenCode startup failure, so the whole hook is
       // best-effort: a broken personal root degrades to "no doppler", never to
       // "opencode will not boot".
-      try {
-        // A root with nothing in it is a dead path in the config, and OpenCode
-        // grants an external_directory allowance per registered root — so an
-        // empty one is a cost with no benefit.
-        // The published Config type for the running harness version has no
-        // `skills` field, though the harness reads it — verified by delivery, not
-        // by the schema. So this one is cast rather than typed, and the reason is
-        // recorded here instead of left as a mystery `as`.
-        const host = cfg as Config & { skills?: { paths?: string[] } };
-        const skills = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
+        try {
+          // The published Config type for the running harness version has no
+          // `skills` field, though the harness reads it — verified by delivery, not
+          // by the schema. So this one is cast rather than typed, and the reason is
+          // recorded here instead of left as a mystery `as`.
+          const host = cfg as Config & { skills?: { paths?: string[] } };
+          // A root with nothing in it is a dead path in the config, and OpenCode
+          // grants an external_directory allowance per registered root — so an
+          // empty one is a cost with no benefit.
+          const skills = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
         if (skills.length) {
           host.skills = host.skills && typeof host.skills === "object" ? host.skills : {};
           const existing = Array.isArray(host.skills.paths) ? host.skills.paths : [];

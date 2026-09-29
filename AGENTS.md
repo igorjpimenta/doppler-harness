@@ -9,11 +9,11 @@ editing any of them takes effect on the next harness start with no re-install.
 ## Commands
 
 ```
-node bin/doppler.ts install opencode     # scaffold personal root → register the bridge → verify
-node bin/doppler.ts update                # refresh the engine, re-register
-node bin/doppler.ts doctor                # is any of it actually working?
-node bin/doppler.ts uninstall opencode   # remove the bridge entry (personal root left alone)
-node bin/doppler.ts version
+node bin/doppler.mjs install opencode     # scaffold personal root → register the bridge → verify
+node bin/doppler.mjs update                # refresh the engine, re-register
+node bin/doppler.mjs doctor                # is any of it actually working?
+node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
+node bin/doppler.mjs version
 
 npm test                                    # the config splicer, agent parsing, bridge, installer
 npm run typecheck
@@ -31,15 +31,19 @@ on update is not theirs — so the first run seeds formats and stops there.
 - `opencode/doppler.ts` — the bridge. Engine-owned, read in place from the
   package, never copied. It is the only file that knows OpenCode exists, and
   the only file typed against `@opencode-ai/plugin`.
-- `bin/doppler.ts` — the installer; the only entry point that touches harness
-  config. `bin/jsonc.ts` — the config splicer it uses.
+- `bin/doppler.mjs` — the installer; the only entry point that touches harness
+  config. `bin/jsonc.mjs` — the config splicer it uses.
 
-The bridge is transpiled by Bun and the installer by Node's type stripping, so
-both are `.ts` on disk with no build step. Runtime imports stay `node:` builtins
-only; `@opencode-ai/plugin` is imported for *types* and erased, so an OpenCode
-that stopped shipping it could not break startup. Note that its published
-`Config` type has no `skills` field at the version we target, though the harness
-reads one — that single boundary is cast, and says so.
+The bridge is TypeScript, transpiled by Bun at plugin load. `bin/` is
+JavaScript and cannot be otherwise: Node refuses to strip types for a file under
+`node_modules`, so a TypeScript entry point cannot be `npm install`ed at all. The
+bridge escapes that only because it is copied to `~/.doppler/opencode/` and
+loaded from there. Runtime imports stay `node:` builtins only;
+`@opencode-ai/plugin` is imported for *types* and erased, so an OpenCode that
+stopped shipping it could not break startup. Note that its published `Config`
+type has no `skills` field at the version we target, though the harness reads
+one — that single boundary is cast, and says so.
+
 - `policy/*.example.*` — formats, instantiated to real filenames on first run.
   A reader that finds no policy file falls back silently, so the installer
   materialises these rather than leaving the examples in place.

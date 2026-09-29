@@ -28,17 +28,17 @@ else
   git clone --quiet --branch "$DOPPLER_BRANCH" "$DOPPLER_REPO" "$DOPPLER_HOME"
 fi
 
-say "installed: $(node "$DOPPLER_HOME/bin/doppler.ts" version)"
+say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
 
 if [ "$#" -gt 0 ]; then
-  exec node "$DOPPLER_HOME/bin/doppler.ts" "$@"
+  exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
 fi
 
 cat <<'EOF'
 
 Connect a harness (restart it afterwards):
 
-  node ~/.doppler/bin/doppler.ts install opencode
+  node ~/.doppler/bin/doppler.mjs install opencode
 
 Then write your first hook — nothing is enforced until you do. Copy
 policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.

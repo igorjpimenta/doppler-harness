@@ -14,7 +14,7 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.9.29
+npm install -g github:igorjpimenta/doppler-harness#2026.9.29-1
 doppler install opencode
 ```
 
@@ -31,7 +31,7 @@ or clone by hand and call the script directly:
 
 ```bash
 git clone https://github.com/igorjpimenta/doppler-harness ~/.doppler
-node ~/.doppler/bin/doppler.ts install opencode
+node ~/.doppler/bin/doppler.mjs install opencode
 ```
 
 **If something has gone quiet, run `doppler doctor`.** It checks each place
@@ -47,12 +47,12 @@ doppler install opencode      # scaffold the personal root, register the bridge,
 doppler update                # refresh the engine, re-register (and pull, under a clone install)
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.9.29
+doppler version               # 2026.9.29-1
 doppler                       # usage
 ```
 
 Installed with npm the command is `doppler`. Installed by cloning, it is
-`node ~/.doppler/bin/doppler.ts` — the same program.
+`node ~/.doppler/bin/doppler.mjs` — the same program.
 
 `install` is idempotent: re-running it refreshes the engine and the config entry
 and never touches what you have written. It also repairs a registration left
@@ -106,7 +106,7 @@ export OPENCODE_BIN=/path/to/opencode
 
 package root
   opencode/doppler.ts             the ONLY file that knows OpenCode exists
-  bin/doppler.ts                 the installer
+  bin/doppler.mjs                 the installer
   policy/*.example.*              formats, seeded on first run
 ```
 
@@ -180,12 +180,13 @@ the bridge.
 
 ## Development
 
-Source of truth is a dev checkout; `~/.doppler` is a clone — never edit there.
-Conventions: Angular commits with scopes; CalVer `YYYY.M.D` in
-`package.json`; `main` receives code only via PRs.
+Source of truth is a dev checkout; `~/.doppler` is installed from it and is
+copied — never edit there. Conventions: Angular commits with scopes; CalVer
+`YYYY.M.D` in `package.json`, with a `-N` suffix for a same-day re-release;
+`main` receives code only via PRs.
 
 ```
-npm test         # 61 tests: the splicer, agent parsing, bridge, installer
+npm test         # 62 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 
