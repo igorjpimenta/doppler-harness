@@ -11,7 +11,10 @@ writing a bridge, not a second implementation.
 
 ## Quick start
 
-Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
+Requirements: macOS or Linux, Node 22.18+, `git`, and OpenCode installed.
+Node 22.18 is the first release that runs TypeScript without a flag, and the
+CLI is written in TypeScript and shipped as-is — there is no build step and no
+compiled output.
 
 ```bash
 npm install -g github:igorjpimenta/doppler-harness#2026.9.29
@@ -31,7 +34,7 @@ or clone by hand and call the script directly:
 
 ```bash
 git clone https://github.com/igorjpimenta/doppler-harness ~/.doppler
-node ~/.doppler/bin/doppler.mjs install opencode
+node ~/.doppler/bin/doppler.ts install opencode
 ```
 
 **If something has gone quiet, run `doppler doctor`.** It checks each place
@@ -52,7 +55,7 @@ doppler                       # usage
 ```
 
 Installed with npm the command is `doppler`. Installed by cloning, it is
-`node ~/.doppler/bin/doppler.mjs` — the same program.
+`node ~/.doppler/bin/doppler.ts` — the same program.
 
 `install` is idempotent: re-running it refreshes the engine and the config entry
 and never touches what you have written. It also repairs a registration left
@@ -102,11 +105,11 @@ export OPENCODE_BIN=/path/to/opencode
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md
-  opencode/doppler.js             the engine, refreshed on every install
+  opencode/doppler.ts             the engine, refreshed on every install
 
 package root
-  opencode/doppler.js             the ONLY file that knows OpenCode exists
-  bin/doppler.mjs                 the installer
+  opencode/doppler.ts             the ONLY file that knows OpenCode exists
+  bin/doppler.ts                 the installer
   policy/*.example.*              formats, seeded on first run
 ```
 
@@ -185,6 +188,10 @@ Conventions: Angular commits with scopes; CalVer `YYYY.M.D` in
 `package.json`; `main` receives code only via PRs.
 
 ```
-node --test test/                        # the splicer, agent parsing, bridge
-node --check opencode/doppler.js
+npm test         # 61 tests: the splicer, agent parsing, bridge, installer
+npm run typecheck
 ```
+
+Types are checked by `tsc` and erased at load — OpenCode transpiles the bridge
+with Bun and Node strips the installer's. Nothing is compiled ahead of time, so
+there is no `dist/` to go stale.

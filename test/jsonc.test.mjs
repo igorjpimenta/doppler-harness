@@ -4,12 +4,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { insertElement, removeElements, removeWhere, topLevelValueSpan } from "../bin/jsonc.mjs";
+import { insertElement, removeElements, removeWhere, topLevelValueSpan } from "../bin/jsonc.ts";
 
 const E = '"file:///pkg/opencode/doppler.js"';
 const add = (text) => insertElement(text, topLevelValueSpan(text, "plugin"), "plugin", E);
 const drop = (text) => removeElements(text, topLevelValueSpan(text, "plugin"), [E]);
-const isDoppler = (literal) => /\/opencode\/doppler\.js"?$/.test(literal);
+// Both spellings are ours: an install made before the .ts rename leaves a .js
+// entry behind, and the reader has to recognise it to clear it.
+const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
 const dropDoppler = (text) => removeWhere(text, topLevelValueSpan(text, "plugin"), isDoppler);
 
 test("finds a top-level value span", () => {
@@ -77,7 +79,9 @@ test("removes an element and the comma that joined it", () => {
 });
 
 test("removing every doppler entry leaves no dangling comma", () => {
-  const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.js",\n    "keep"\n  ]\n}\n';
+  // Mixed .js and .ts on purpose: an install made before the rename leaves a .js
+  // entry behind, and the reader has to recognise both as ours to clear them.
+  const text = '{\n  "plugin": [\n    "file:///a/opencode/doppler.js",\n    "mid",\n    "file:///b/opencode/doppler.ts",\n    "keep"\n  ]\n}\n';
   assert.equal(dropDoppler(text), '{\n  "plugin": [\n    "mid",\n    "keep"\n  ]\n}\n');
   assert.deepEqual(JSON.parse(dropDoppler(text)).plugin, ["mid", "keep"]);
 });

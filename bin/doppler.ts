@@ -15,7 +15,7 @@
 //
 // Usage:
 //   doppler install opencode
-//   node ~/.doppler/bin/doppler.mjs install opencode
+//   node ~/.doppler/bin/doppler.ts install opencode
 //   doppler update                # pull the personal root, then re-register
 //   doppler uninstall opencode
 //   doppler version
@@ -25,7 +25,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { insertElement, removeWhere, stringElements, topLevelValueSpan } from "./jsonc.mjs";
+import { insertElement, removeWhere, stringElements, topLevelValueSpan } from "./jsonc.ts";
 
 // PKG = where this CLI (and the engine payload) lives — dev checkout, global
 // npm install, or the ~/.doppler root itself. HOME = the personal root every
@@ -44,8 +44,8 @@ const HOME = process.env.DOPPLER_HOME || path.join(os.homedir(), ".doppler");
 // The file is a copy, refreshed on every install and update. That is a
 // deliberate exception to "no copies": a copy refreshed on every run cannot
 // drift, and the alternative is a registration that npm can invalidate.
-const BRIDGE = path.join(HOME, "opencode", "doppler.js");
-const BRIDGE_SRC = path.join(PKG, "opencode", "doppler.js");
+const BRIDGE = path.join(HOME, "opencode", "doppler.ts");
+const BRIDGE_SRC = path.join(PKG, "opencode", "doppler.ts");
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
 
@@ -114,7 +114,7 @@ function ocConfigPath() {
   return path.join(OC_CONFIG_DIR, "opencode.json");
 }
 
-function readConfig(p) {
+function readConfig(p: string): string {
   try {
     return fs.readFileSync(p, "utf8");
   } catch {
@@ -128,7 +128,7 @@ function readConfig(p) {
 // unencoded URL simply fails to load.
 const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 
-const isDoppler = (literal) => /\/opencode\/doppler\.js"?$/.test(literal);
+const isDoppler = (literal: string) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
 
 function register() {
   const p = ocConfigPath();
@@ -157,13 +157,14 @@ function unregister() {
 // Resolved lazily, and allowed to be absent: `doctor` and `version` have to work
 // precisely when the install is broken, so a missing CLI cannot exit(1) before
 // they get a chance to explain it.
-let ocCache;
+let ocCache: string | null | undefined;
 function opencodeCli() {
   if (ocCache !== undefined) return ocCache;
   // Existence is checked, not just presence on PATH: OPENCODE_BIN is routinely
   // set to a path that has since been uninstalled, and doctor has to be able to
   // say "the CLI is gone" rather than report a command that cannot run.
-  const usable = (p) => typeof p === "string" && p.length > 0 && fs.existsSync(p);
+  const usable = (p: string | undefined): p is string =>
+    typeof p === "string" && p.length > 0 && fs.existsSync(p);
   if (usable(process.env.OPENCODE_BIN)) return (ocCache = process.env.OPENCODE_BIN);
   try {
     const w = execSync("which opencode", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
@@ -173,7 +174,7 @@ function opencodeCli() {
   return (ocCache = usable(fallback) ? fallback : null);
 }
 
-const sh = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "inherit"] }).toString().trim();
+const sh = (cmd: string) => execSync(cmd, { stdio: ["ignore", "pipe", "inherit"] }).toString().trim();
 
 // Registering is not the same as working, and the difference is invisible: a
 // config OpenCode refuses to parse means the bridge never loads and every hook
@@ -193,7 +194,7 @@ function verify() {
     console.log(`bridge registered in ${ocConfigPath()} — config parses, hooks are live.`);
     console.log("restart opencode (config is read once at startup).");
   } catch (e) {
-    console.warn(`${ocConfigPath()} did not parse: ${String(e.message).split("\n")[0]}`);
+    console.warn(`${ocConfigPath()} did not parse: ${String((e as Error).message).split("\n")[0]}`);
     console.warn("  OpenCode will ignore it, so no doppler hooks will run. Fix the file, then re-run.");
     process.exitCode = 1;
   }
@@ -235,13 +236,13 @@ function update() {
 // is why this exists rather than trusting the installer to have worked.
 function doctor() {
   let broken = 0;
-  const ok = (label, detail) => console.log(`  ok    ${label}${detail ? ` — ${detail}` : ""}`);
-  const bad = (label, detail, fix) => {
+  const ok = (label: string, detail?: string) => console.log(`  ok    ${label}${detail ? ` — ${detail}` : ""}`);
+  const bad = (label: string, detail: string, fix?: string) => {
     broken += 1;
     console.log(`  FAIL  ${label} — ${detail}`);
     if (fix) console.log(`        fix: ${fix}`);
   };
-  const warn = (label, detail) => console.log(`  warn  ${label} — ${detail}`);
+  const warn = (label: string, detail: string) => console.log(`  warn  ${label} — ${detail}`);
 
   console.log(`personal root\n  ${HOME}`);
   if (!fs.existsSync(HOME)) {
@@ -301,8 +302,8 @@ function doctor() {
     bad("opencode CLI", "not found", "install it, or set OPENCODE_BIN");
   } else {
     try {
-      const resolved = JSON.parse(execSync(`${oc} debug config`, { stdio: ["ignore", "pipe", "ignore"] }).toString());
-      const loaded = (resolved.plugin ?? []).some((p) => {
+      const resolved = JSON.parse(execSync(`${oc} debug config`, { stdio: ["ignore", "pipe", "ignore"] }).toString()) as { plugin?: unknown[] };
+      const loaded = (resolved.plugin ?? []).some((p: unknown) => {
         try {
           return path.resolve(fileURLToPath(String(p))) === registered;
         } catch {
@@ -312,14 +313,14 @@ function doctor() {
       if (loaded) ok("opencode loads the bridge");
       else bad("opencode loads the bridge", "the entry is not in the resolved config", "doppler install opencode");
     } catch (e) {
-      bad("opencode loads the bridge", String(e.message).split("\n")[0], `fix ${cfg}, then re-run`);
+      bad("opencode loads the bridge", String((e as Error).message).split("\n")[0], `fix ${cfg}, then re-run`);
     }
   }
 
   // No hooks is a legitimate state, not a failure — but it is the one where the
   // user believes something is enforced and nothing is, so it is named.
   const hooksDir = path.join(HOME, "hooks");
-  let hooks = [];
+  let hooks: string[] = [];
   try {
     hooks = fs.readdirSync(hooksDir).filter((f) => f.endsWith(".mjs") && !f.endsWith(".example.mjs")).sort();
   } catch {}
@@ -337,7 +338,7 @@ function doctor() {
       const n = (rules.ask ?? []).length + (rules.allow ?? []).length;
       ok("permission policy", `${n} bash rules, ${(rules.tools?.allow ?? []).length} tool rules`);
     } catch (e) {
-      bad("permission policy", `malformed: ${e.message.slice(0, 60)}`, `fix ${allowlist}`);
+      bad("permission policy", `malformed: ${(e as Error).message.slice(0, 60)}`, `fix ${allowlist}`);
     }
   }
 

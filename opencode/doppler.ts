@@ -17,6 +17,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
+import type { Config, Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
+
 // The hooks are standalone node scripts, so exec them with node — NOT with
 // process.execPath. Under Bun, which is what OpenCode's plugin runtime is,
 // process.execPath is the opencode binary itself: spawning it would launch a
@@ -24,6 +26,30 @@ import { execFileSync, spawnSync } from "node:child_process";
 // one of them fails open. That is a policy engine that reports success and
 // enforces nothing, so node is resolved by name and its usability is checked
 // once at startup rather than trusted.
+// What a hook is handed, and what it may answer. This is doppler's own protocol,
+// not OpenCode's: OpenCode's tool-call vocabulary is mapped in by `enforce`,
+// and a bridge for another harness maps its own in the same place.
+//
+// `tool` and `args` are absent for a lifecycle event, which is why a hook
+// checking `payload.tool` gets undefined rather than a lie.
+type HookPayload = {
+  session_id: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  source_patterns?: string[];
+  event?: string;
+};
+
+type HookDecision = { decision: "deny" | "ask"; reason: string };
+
+// The user's permission rules, as data. The patterns are globs passed through
+// to the host verbatim; the shapes here are what keeps that honest.
+type Allowlist = {
+  allow?: { pattern: string; note?: string }[];
+  ask?: { pattern: string; note?: string }[];
+  tools?: { allow?: string[] };
+};
+
 const NODE = (() => {
   if (process.env.DOPPLER_NODE) return process.env.DOPPLER_NODE;
   try {
@@ -85,7 +111,7 @@ function hookFiles() {
     return fs.readdirSync(paths().hooks)
       // `.example.mjs` is seeded as documentation, matching the policy/ naming:
       // running it would enforce the example's rules, which the user never chose.
-      .filter((f) => f.endsWith(".mjs") && !f.endsWith(".example.mjs"))
+      .filter((f: string) => f.endsWith(".mjs") && !f.endsWith(".example.mjs"))
       .sort();
   } catch {
     return [];
@@ -95,7 +121,7 @@ function hookFiles() {
 // A hook that is missing, slow, or broken must not wedge every tool call. Any
 // failure is "no opinion" and the tool proceeds: the same fail-open rule the
 // hooks themselves follow.
-function runHook(file, payload) {
+function runHook(file: string, payload: HookPayload): HookDecision | null {
   let res;
   try {
     res = spawnSync(NODE, [file], {
@@ -122,13 +148,13 @@ const ASK_NOTE =
   "approves, re-run with the bypass marker — prefix the command with " +
   "`# bypass: <reason>`, or set DOPPLER_BYPASS_GUARDS=1 for the session.";
 
-function enforce(input, output) {
+function enforce(input: { tool: string; sessionID: string }, output: { args?: unknown }) {
   const files = hookFiles();
   if (!files.length) return;
-  const payload = {
+  const payload: HookPayload = {
     session_id: input.sessionID,
     tool: input.tool,
-    args: output.args ?? {},
+    args: (output.args ?? {}) as HookPayload["args"],
     source_patterns: SOURCE_PATTERNS,
   };
   for (const file of files) {
@@ -150,13 +176,13 @@ function enforce(input, output) {
 // unmatched command keeps the host's own default instead of inheriting
 // something doppler chose.
 function compiledPermission() {
-  let rules;
+  let rules: Allowlist;
   try {
     rules = JSON.parse(fs.readFileSync(path.join(paths().home, "policy", "allowlist.json"), "utf8"));
   } catch {
     return null;
   }
-  const permission = {};
+  const permission: Record<string, unknown> = {};
 
   for (const t of rules.tools?.allow ?? []) {
     if (typeof t === "string" && t) permission[t] = "allow";
@@ -164,7 +190,7 @@ function compiledPermission() {
 
   // ask before allow, so on an overlap the ask is the one the user has to see:
   // a broad allow must not swallow a narrow ask.
-  const bash = {};
+  const bash: Record<string, string> = {};
   for (const r of rules.ask ?? []) {
     if (typeof r?.pattern !== "string" || !r.pattern) continue;
     bash[r.pattern] = "ask";
@@ -182,21 +208,24 @@ function compiledPermission() {
 // appended: a user who has globally allowed bash still gets doppler's asks.
 // A string-valued tool rule becomes {"*": <string>} first, which preserves its
 // meaning for every command and leaves doppler's entries after it.
-function mergePermission(cfg, tool, rule) {
-  cfg.permission = cfg.permission && typeof cfg.permission === "object" ? cfg.permission : {};
-  const current = cfg.permission[tool];
-  if (rule && typeof rule === "string") {
-    cfg.permission[tool] = rule;
-    return;
+function mergePermission(cfg: Record<string, unknown>, tool: string, rule: unknown) {
+  const map = (cfg.permission && typeof cfg.permission === "object"
+    ? cfg.permission
+    : {}) as Record<string, unknown>;
+  const current = map[tool];
+  if (typeof rule === "string") {
+    map[tool] = rule;
+  } else if (rule) {
+    const base = current && typeof current === "object" ? { ...(current as object) }
+      : current !== undefined ? { "*": current }
+        : {};
+    map[tool] = { ...base, ...(rule as object) };
   }
-  const base = current && typeof current === "object" ? { ...current }
-    : current ? { "*": current }
-      : {};
-  cfg.permission[tool] = { ...base, ...rule };
+  cfg.permission = map;
 }
 
 // A directory that exists and has something in it.
-function hasEntries(dir) {
+function hasEntries(dir: string) {
   try {
     return fs.readdirSync(dir).length > 0;
   } catch {
@@ -206,8 +235,9 @@ function hasEntries(dir) {
 
 function overlaySkillRoots() {
   try {
-    const o = JSON.parse(fs.readFileSync(path.join(paths().home, "overlay.json"), "utf8"));
-    return Array.isArray(o.skillsRoots) ? o.skillsRoots.filter((p) => typeof p === "string") : [];
+    const o = JSON.parse(fs.readFileSync(path.join(paths().home, "overlay.json"), "utf8")) as { skillsRoots?: unknown };
+    const roots = o.skillsRoots;
+    return Array.isArray(roots) ? roots.filter((p: unknown): p is string => typeof p === "string") : [];
   } catch {
     return [];
   }
@@ -256,18 +286,19 @@ const TOOL_ALIASES = {
   lsp: "lsp",
 };
 
-function parseToolList(raw) {
+function parseToolList(raw: string) {
   const inner = raw.trim().replace(/^\[/, "").replace(/\]$/, "");
-  const names = inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  const allowed = new Set();
-  for (const n of names) allowed.add(TOOL_ALIASES[n.toLowerCase()] ?? n.toLowerCase());
+  const names = inner.split(",").map((s: string) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  const allowed = new Set<string>();
+  const aliases = TOOL_ALIASES as Record<string, string>;
+  for (const n of names) allowed.add(aliases[n.toLowerCase()] ?? n.toLowerCase());
   if (!allowed.size) return null;
-  const permission = {};
+  const permission: Record<string, string> = {};
   for (const key of TOOL_KEYS) if (!allowed.has(key)) permission[key] = "deny";
   return permission;
 }
 
-function coerce(raw) {
+function coerce(raw: string) {
   const v = raw.trim();
   if (/^"(.*)"$/.test(v) || /^'(.*)'$/.test(v)) return v.slice(1, -1);
   if (v === "true") return true;
@@ -276,12 +307,12 @@ function coerce(raw) {
   return v;
 }
 
-function parseAgent(text) {
+function parseAgent(text: string) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
   if (!m) return null;
   const [, frontmatter, body] = m;
-  const config = {};
-  let block = null;
+  const config: Record<string, unknown> = {};
+  let block: string | null = null;
   for (const line of frontmatter.split(/\r?\n/)) {
     if (!line.trim() || line.trim().startsWith("#")) continue;
     const indented = /^\s/.test(line);
@@ -291,7 +322,7 @@ function parseAgent(text) {
     const value = line.slice(idx + 1);
     if (indented) {
       if (block && key && AGENT_KEYS.has(block)) {
-        (config[block] ??= {})[key] = coerce(value);
+        ((config[block] ??= {}) as Record<string, unknown>)[key] = coerce(value);
       }
       continue;
     }
@@ -321,7 +352,7 @@ function parseAgent(text) {
 function readAgents() {
   let files;
   try {
-    files = fs.readdirSync(paths().agents).filter((f) => f.endsWith(".md")).sort();
+    files = fs.readdirSync(paths().agents).filter((f: string) => f.endsWith(".md")).sort();
   } catch {
     return [];
   }
@@ -337,12 +368,12 @@ function readAgents() {
   return agents;
 }
 
-function report(message, level, client) {
+function report(message: string, level: "debug" | "info" | "warn" | "error", client?: PluginInput["client"]) {
   console.error(`doppler: ${message}`);
   client?.app?.log?.({ body: { service: "doppler-harness", level, message } }).catch?.(() => {});
 }
 
-export const DopplerHarness = async ({ client } = {}) => {
+export const DopplerHarness: Plugin = async ({ client }) => {
   // Fail-open means a broken runtime is indistinguishable from a permissive one
   // at runtime, so say so once, at the only moment the difference is visible.
   if (!nodeUsable()) {
@@ -371,11 +402,16 @@ export const DopplerHarness = async ({ client } = {}) => {
         // A root with nothing in it is a dead path in the config, and OpenCode
         // grants an external_directory allowance per registered root — so an
         // empty one is a cost with no benefit.
+        // The published Config type for the running harness version has no
+        // `skills` field, though the harness reads it — verified by delivery, not
+        // by the schema. So this one is cast rather than typed, and the reason is
+        // recorded here instead of left as a mystery `as`.
+        const host = cfg as Config & { skills?: { paths?: string[] } };
         const skills = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
         if (skills.length) {
-          cfg.skills = cfg.skills && typeof cfg.skills === "object" ? cfg.skills : {};
-          const existing = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : [];
-          cfg.skills.paths = [...new Set([...existing, ...skills])];
+          host.skills = host.skills && typeof host.skills === "object" ? host.skills : {};
+          const existing = Array.isArray(host.skills.paths) ? host.skills.paths : [];
+          host.skills.paths = [...new Set([...existing, ...skills])];
         }
 
         const permission = compiledPermission();

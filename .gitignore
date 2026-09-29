@@ -15,8 +15,10 @@
 !bin/
 !opencode/
 !test/
+!tsconfig.json
 !README.md
 
 # --- noise to drop even inside tracked dirs ---
 **/.DS_Store
 **/node_modules/
+package-lock.json

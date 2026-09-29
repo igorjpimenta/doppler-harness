@@ -15,9 +15,12 @@ say() { printf '\033[36m[doppler]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[doppler]\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v git  >/dev/null 2>&1 || die "git is required (https://git-scm.com)"
-command -v node >/dev/null 2>&1 || die "Node.js 18+ is required (https://nodejs.org)"
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-[ "$NODE_MAJOR" -ge 18 ] || die "Node.js 18+ required, found $(node -v)"
+command -v node >/dev/null 2>&1 || die "Node.js 22.18+ is required (https://nodejs.org)"
+# 22.18 is the first release that runs TypeScript without a flag. The installer
+# is a .ts file shipped as-is, so below this it will not start at all — better to
+# say so here than to fail with a syntax error on a type annotation.
+NODE_OK="$(node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)' 2>/dev/null && echo yes || echo no)"
+[ "$NODE_OK" = yes ] || die "Node.js 22.18+ required (the installer is TypeScript), found $(node -v 2>/dev/null || echo none)"
 
 if [ -d "$DOPPLER_HOME/.git" ]; then
   say "updating existing root at $DOPPLER_HOME"
@@ -29,17 +32,17 @@ else
   git clone --quiet --branch "$DOPPLER_BRANCH" "$DOPPLER_REPO" "$DOPPLER_HOME"
 fi
 
-say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
+say "installed: $(node "$DOPPLER_HOME/bin/doppler.ts" version)"
 
 if [ "$#" -gt 0 ]; then
-  exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
+  exec node "$DOPPLER_HOME/bin/doppler.ts" "$@"
 fi
 
 cat <<'EOF'
 
 Connect a harness (restart it afterwards):
 
-  node ~/.doppler/bin/doppler.mjs install opencode
+  node ~/.doppler/bin/doppler.ts install opencode
 
 Then write your first hook — nothing is enforced until you do. Copy
 policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.

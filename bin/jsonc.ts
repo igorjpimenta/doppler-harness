@@ -6,9 +6,12 @@
 
 const WS = /\s/;
 
+// A half-open [start, end) range into the text.
+type Span = { start: number; end: number };
+
 // Skips a string literal starting at `i` (which must be the opening quote).
 // Returns the index just past the closing quote.
-function skipString(s, i) {
+function skipString(s: string, i: number): number {
   i += 1;
   while (i < s.length) {
     const c = s[i];
@@ -19,7 +22,7 @@ function skipString(s, i) {
   return i;
 }
 
-function skipTrivia(s, i) {
+function skipTrivia(s: string, i: number): number {
   while (i < s.length) {
     if (WS.test(s[i])) { i += 1; continue; }
     if (s[i] === "/" && s[i + 1] === "/") {
@@ -43,7 +46,7 @@ function skipTrivia(s, i) {
 // Both bracket kinds count toward the depth, not just the kind that opened:
 // `["name", {opts}]` is a single array containing an object, and counting only
 // `[` would return at the object's `}` and cut the array in half.
-function matchBracket(s, i) {
+function matchBracket(s: string, i: number): number {
   let depth = 0;
   while (i < s.length) {
     const c = s[i];
@@ -63,7 +66,7 @@ function matchBracket(s, i) {
 
 // Past the end of a value starting at `i` (the first non-trivia character
 // after a colon).
-function skipValue(s, i, limit) {
+function skipValue(s: string, i: number, limit: number): number {
   if (s[i] === "[" || s[i] === "{") {
     const end = matchBracket(s, i);
     return end < 0 ? limit : end;
@@ -77,7 +80,7 @@ function skipValue(s, i, limit) {
 // Span [start, end) of the value for a top-level `key`, or null. Only depth 1
 // counts, and a non-matching key's whole value is skipped — otherwise a "plugin"
 // key nested inside another object reads as the top-level one.
-export function topLevelValueSpan(text, key) {
+export function topLevelValueSpan(text: string, key: string): Span | null {
   if (text[0] !== "{") return null;
   const rootEnd = matchBracket(text, 0);
   if (rootEnd < 0) return null;
@@ -105,18 +108,18 @@ export function topLevelValueSpan(text, key) {
   return null;
 }
 
-function isBlank(s) {
+function isBlank(s: string): boolean {
   return s.trim() === "";
 }
 
 // Index just past the newline at or after `i`, so a line can be dropped whole.
-function pastNewline(s, i) {
+function pastNewline(s: string, i: number): number {
   while (i < s.length && s[i] !== "\n") i += 1;
   return Math.min(i + 1, s.length);
 }
 
 // Index of the first quoted string in s.slice(from, to), or -1.
-function firstStringStart(s, from, to) {
+function firstStringStart(s: string, from: number, to: number): number {
   for (let i = from; i < to; i += 1) {
     if (s[i] === '"') return i;
   }
@@ -130,7 +133,7 @@ function firstStringStart(s, from, to) {
 // case — and a regex cannot be used either, because it cannot tell a `//` inside
 // a string from a comment, which a file:// URL is full of. This walks with the
 // same string-aware scanner the splicer uses.
-export function stringElements(text, span) {
+export function stringElements(text: string, span: Span | null): string[] {
   if (!span) return [];
   const out = [];
   for (let i = span.start; i < span.end; i += 1) {
@@ -146,7 +149,7 @@ export function stringElements(text, span) {
 // comma separated it from a neighbour. Both directions are handled because
 // either may be the one that exists, and a leftover comma would be invalid
 // JSON — the failure mode that silently breaks the user's whole config.
-function removeOne(text, at, literal) {
+function removeOne(text: string, at: number, literal: string): string {
   const e0 = at + literal.length;
   const ls = text.lastIndexOf("\n", at) + 1;
   let nl = e0;
@@ -181,14 +184,14 @@ function removeOne(text, at, literal) {
 // Remove every array element equal to one of `literals`. Matching on the exact
 // quoted literal is unambiguous — a JSON string only equals itself — so this
 // cannot clip a neighbouring entry.
-export function removeElements(text, span, literals) {
+export function removeElements(text: string, span: Span | null, literals: string[]): string {
   return removeWhere(text, span, (literal) => literals.includes(literal));
 }
 
 // Same, for elements chosen by predicate on the whole quoted literal. The
 // installer uses this to clear entries whose path it no longer knows, e.g.
 // after the personal root moved.
-export function removeWhere(text, span, wanted) {
+export function removeWhere(text: string, span: Span | null, wanted: (literal: string) => boolean): string {
   if (!span) return text;
   let out = text;
   for (;;) {
@@ -211,7 +214,7 @@ export function removeWhere(text, span, wanted) {
 // top-level property when it is absent. New keys go last rather than first so
 // the comma attaches to the property before them and no dangling comma is ever
 // written into a file that might be strict JSON.
-export function insertElement(text, span, key, element) {
+export function insertElement(text: string, span: Span | null, key: string, element: string): string {
   const entry = `"${key}": [${element}]`;
 
   if (span) {
@@ -235,7 +238,7 @@ export function insertElement(text, span, key, element) {
     // Without lifting both, `"a" // why` becomes `"a" ,// why`.
     const before = text.slice(0, at).trimEnd();
     const after = text.slice(at, close);
-    const gap = text.slice(0, at).slice(before.length) + /^[\t ]*/.exec(after)[0];
+      const gap = text.slice(0, at).slice(before.length) + /^[\t ]*/.exec(after)![0];
     const { comment, rest } = splitTrailingComment(after.replace(/^[\t ]*/, ""));
     const comma = needsComma(text, at);
     const indent = elementIndentFor(text, span.start, close);
@@ -265,28 +268,28 @@ export function insertElement(text, span, key, element) {
   const at = lastValueEnd(text, 1, close);
   if (at < 0) return `{${entry}${text.slice(1)}`;
   const lines = tail.slice(0, at).split("\n");
-  const indent = /^[\t ]*/.exec(lines[lines.length - 1])[0] || "  ";
+  const indent = /^[\t ]*/.exec(lines[lines.length - 1])?.[0] || "  ";
   const pad = multiline ? `\n${indent}` : " ";
   return `${tail.slice(0, at)},${pad}${entry}${text.slice(at)}`;
 }
 
 // A trailing comma is legal in jsonc and users write it; a second one would be
 // the malformed file this whole module exists to prevent.
-function needsComma(text, at) {
+function needsComma(text: string, at: number): string {
   return text.slice(0, at).trimEnd().endsWith(",") ? "" : ",";
 }
 
 // A single character of the same whitespace kind as `indent`, i.e. one more
 // level. Returning the whole run instead would turn a 4-space indent into 8 and
 // visibly reflow the user's file.
-function childIndentOf(indent) {
+function childIndentOf(indent: string): string {
   if (!indent) return "  ";
   return indent[indent.length - 1];
 }
 
 // Leading whitespace of the line containing `i`.
-function indentOfLine(text, i) {
-  return /^[\t ]*/.exec(text.slice(text.lastIndexOf("\n", i - 1) + 1))[0];
+function indentOfLine(text: string, i: number): string {
+  return /^[\t ]*/.exec(text.slice(text.lastIndexOf("\n", i - 1) + 1))?.[0] ?? "";
 }
 
 // Indentation for a new element in a multi-line array: whatever the array's
@@ -294,7 +297,7 @@ function indentOfLine(text, i) {
 // bracket's own line is not a reliable guide — it is usually followed by a blank
 // line. Falls back to the closing bracket's indent for an array with no elements
 // to copy from.
-function elementIndentFor(text, open, close) {
+function elementIndentFor(text: string, open: number, close: number): string {
   const first = firstStringStart(text, open + 1, close);
   if (first >= 0) return indentOfLine(text, first);
   return childIndentOf(indentOfLine(text, close));
@@ -305,8 +308,8 @@ function elementIndentFor(text, open, close) {
 // and whatever follows it. A `//` runs to end of line; a block comment ends at
 // its closer. Both are returned whole so the caller can re-emit the comment on
 // the line it belongs to.
-function splitTrailingComment(s) {
-  const lead = /^\s*/.exec(s)[0];
+function splitTrailingComment(s: string): { comment: string; rest: string } {
+  const lead = /^\s*/.exec(s)?.[0] ?? "";
   const body = s.slice(lead.length);
   if (body.startsWith("//")) {
     const nl = body.indexOf("\n");
@@ -327,7 +330,7 @@ function splitTrailingComment(s) {
 // `["name", {opts}]` is one element and stopping inside the object would put the
 // new entry in the middle of it. A trailing separator is not counted, so the
 // answer is always the end of the last value.
-function lastElementEnd(s, from, to) {
+function lastElementEnd(s: string, from: number, to: number): number {
   let end = -1;
   let i = from;
   while (i < to) {
@@ -363,7 +366,7 @@ function lastElementEnd(s, from, to) {
 // End of the last property value in s.slice(from, to), for the object case.
 // There is no trailing separator to key off, so this tracks the end of each
 // value and stops before any comment, which would swallow a separator.
-function lastValueEnd(s, from, to) {
+function lastValueEnd(s: string, from: number, to: number): number {
   let end = -1;
   let i = from;
   while (i < to) {
@@ -394,7 +397,7 @@ function lastValueEnd(s, from, to) {
   return end;
 }
 
-function topLevelClose(text) {
+function topLevelClose(text: string): number {
   const end = matchBracket(text, 0);
   return end < 0 ? text.length : end - 1;
 }
