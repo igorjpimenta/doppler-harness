@@ -199,6 +199,22 @@ test("doctor passes after a real install", () => {
   }
 });
 
+test("doctor names the CLI it is running from, with its version", () => {
+  // A CLI on PATH that is not the one you meant produces no error anywhere —
+  // it just answers for different code. A doctor that never ran cannot report
+  // that, so the one thing available is to say where this one is running from.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    const r = run(m, ["doctor"]);
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+    assert.match(out(r), /ok {4}cli — .* — \d{4}\.\d+\.\d+(-\d+)?$/m);
+    assert.match(out(r), new RegExp(`cli — .* — ${version.replace(/\./g, "\\.")}$`, "m"));
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("doctor names a registration pointing somewhere that no longer exists", () => {
   // The exact silent-inert case: the entry is present, the config parses, and
   // nothing is delivered.

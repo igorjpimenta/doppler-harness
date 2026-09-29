@@ -33,6 +33,15 @@ import { insertElement, removeWhere, stringElements, topLevelValueSpan } from ".
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOME = process.env.DOPPLER_HOME || path.join(os.homedir(), ".doppler");
 
+// Read from the package this file is running inside, so it reports the version
+// of the code actually executing rather than whatever a sibling copy claims.
+let PKG_VERSION = "unknown";
+try {
+  PKG_VERSION = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8")).version;
+} catch {
+  // package.json unreadable: the version is a nicety, the checks are not
+}
+
 // The bridge is registered from INSIDE the personal root, not from PKG. Under
 // `npm install -g` PKG is a path into node_modules that npm owns and may
 // repoint on any reinstall; a config entry pointing there survives the move and
@@ -254,6 +263,23 @@ function doctor() {
   } else {
     ok("root exists");
   }
+
+  // The CLI cannot check itself — a doctor that never ran reports nothing — so
+  // this names where it is running from instead, which is the only form of the
+  // answer available to someone whose `doppler` is not the one they meant. A
+  // checkout reports its branch, which is the case where the command answers for
+  // code that was never released.
+  const rel = (p) => p.replace(os.homedir(), "~");
+  let vcs = "";
+  try {
+    const branch = execSync(`git -C ${JSON.stringify(PKG)} rev-parse --abbrev-ref HEAD`, {
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString().trim();
+    if (branch && branch !== "HEAD") vcs = ` on ${branch}`;
+  } catch {
+    // not a checkout, or no git
+  }
+  ok("cli", `${rel(PKG)}${vcs} — ${PKG_VERSION}`);
 
   // The bridge is a copy refreshed on every install. A missing one means either
   // an uninstall or a half-finished install, and in both cases nothing runs.
