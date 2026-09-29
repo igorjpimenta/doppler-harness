@@ -185,11 +185,19 @@ function update() {
 
 const cmd = process.argv[2] ?? "help";
 const target = process.argv[3];
+const USAGE = "usage: doppler <install|uninstall> opencode | update | version";
 if (cmd === "install" && target === "opencode") installOpencode();
 else if (cmd === "uninstall" && target === "opencode") uninstallOpencode();
 else if (cmd === "update") update();
 else if (cmd === "version") console.log(packageJson().version);
 else {
-  console.log("usage: doppler.mjs <install|uninstall> opencode | update | version");
+  console.log(USAGE);
+  // A name we do not serve is the case worth answering properly: the usage line
+  // alone reads as a typo, when the honest answer is that the harness is not
+  // supported yet and the work is in one commit away.
+  if (target && target !== "opencode") {
+    console.log(`\nopencode is the only supported harness right now. ${target} is not wired.`);
+    console.log("See AGENTS.md for what a new one needs — it is a bridge, not a fork.");
+  }
   process.exit(cmd === "help" ? 0 : 1);
 }
