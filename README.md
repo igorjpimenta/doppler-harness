@@ -245,3 +245,43 @@ The trade is that `doppler version` then reports whatever branch is checked out,
 including branches that were never released, and `doctor` cannot tell you that
 `install` came from a released tag. Link it to iterate; re-pin with
 `npm install -g github:igorjpimenta/doppler-harness#<tag>` when you are done.
+
+#### Testing an unreleased build as a real install
+
+`npm link` puts your working copy on the `PATH`, so anything the checkout does
+becomes live immediately — including a `git checkout`. When you want the build to
+behave like a released install, pack it instead:
+
+```bash
+npm pack                                    # writes a .tgz of the current tree
+npm install -g ./igorjpimenta-doppler-harness-<version>.tgz
+doppler install opencode
+```
+
+A tarball install and a registry install are the same thing on disk: a real
+directory under `node_modules`, no symlink anywhere. So this is the closest you
+get to the shipped artifact without publishing, and it is how to test anything
+that depends on where the engine lives rather than on what is in it.
+
+Two consequences worth naming before you start:
+
+- **The registration points into `node_modules`,** so `doctor` will warn
+  `registered path is inside node_modules`. That is the bridge registered from
+  the package, and npm is free to repoint that directory on any reinstall; if it
+  goes missing, `doppler install opencode` puts it back.
+- **Give the tarball a version you can tell apart from the release.** A build
+  tagged the same as the published one is indistinguishable at runtime —
+  `doppler version` reports the same string either way. Bump `version` in
+  `package.json` before packing, and use a suffix npm's semver accepts
+  (`2026.9.29-4`); a build metadata tag like `2026.9.29-3+local` fails this
+  package's own version-shape test.
+
+Run `npm test` before packing, not after: the tarball is what you install, so a
+failure there is the one you would ship.
+
+To go back to the release:
+
+```bash
+npm install -g "github:igorjpimenta/doppler-harness#<tag>"
+doppler install opencode
+```
