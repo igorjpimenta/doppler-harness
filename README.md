@@ -186,7 +186,7 @@ copied — never edit there. Conventions: Angular commits with scopes; CalVer
 `main` receives code only via PRs.
 
 ```
-npm test         # 62 tests: the splicer, agent parsing, bridge, installer
+npm test         # 64 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 
@@ -199,3 +199,44 @@ preference. Node refuses to strip types for files under `node_modules`, so a
 TypeScript entry point cannot be `npm install`ed at all — the documented install
 path would fail on every machine. The bridge escapes this only because it is
 copied to `~/.doppler/opencode/` and loaded from there.
+
+### Testing a local change
+
+Run it from the checkout, without touching the global install:
+
+```bash
+node bin/doppler.mjs doctor          # the checkout's own copy
+```
+
+`DOPPLER_HOME` moves where the *root* is scaffolded, but `install` still edits
+your real `~/.config/opencode` registration to point at it — so a throwaway
+install leaves your live harness pointed at a scratch directory. `doctor` and
+`uninstall` are safe under `DOPPLER_HOME`; `install` is not. To get a real
+test install, use a throwaway `HOME` instead:
+
+```bash
+DOPPLER_HOME=/tmp/scratch node bin/doppler.mjs install opencode
+HOME=/tmp/scratch-home node bin/doppler.mjs install opencode   # isolated
+rm -rf /tmp/scratch /tmp/scratch-home
+```
+
+The `cli` line `doctor` prints is how you tell which copy you are running:
+
+```
+ok    cli — ~/dev/doppler-harness on main — 2026.9.29-3     # the checkout
+ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.9.29-3  # a global install
+```
+
+A branch name there means unreleased code. A global install pinned by tag has no
+branch, because it is not a checkout.
+
+If you want the global `doppler` to track your edits instead of a tag, link it:
+
+```bash
+npm link            # in the checkout — `doppler` now runs your working copy
+```
+
+The trade is that `doppler version` then reports whatever branch is checked out,
+including branches that were never released, and `doctor` cannot tell you that
+`install` came from a released tag. Link it to iterate; re-pin with
+`npm install -g github:igorjpimenta/doppler-harness#<tag>` when you are done.
