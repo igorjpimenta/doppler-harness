@@ -216,6 +216,44 @@ test("doctor names the CLI it is running from, with its version", () => {
   }
 });
 
+test("doctor does not report a branch from a repo the package merely sits inside", () => {
+  // `git -C PKG` searches upward, so an installed package under a directory that
+  // happens to be a repo — /opt/homebrew, or someone's dotfiles — would report
+  // that repo's branch as its own. On a real machine this read as
+  // "on stable" for an npm install that is not a checkout at all.
+  const m = machine();
+  try {
+    // A real git repo wrapping a copy of the package, so the upward search has
+    // something to find. `git` is stubbed because the test PATH has no real one.
+    const outer = path.join(m.home, "outer");
+    const pkg = path.join(outer, "node_modules", "pkg");
+    fs.mkdirSync(path.join(pkg, "bin"), { recursive: true });
+    for (const f of ["doppler.mjs", "jsonc.mjs"]) {
+      fs.copyFileSync(path.join(ROOT, "bin", f), path.join(pkg, "bin", f));
+    }
+    fs.cpSync(path.join(ROOT, "opencode"), path.join(pkg, "opencode"), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "package.json"), path.join(pkg, "package.json"));
+    const gitStub = path.join(m.home, "git-stub");
+    fs.writeFileSync(gitStub, `#!/bin/sh
+case "$*" in
+  *--show-toplevel*) echo ${JSON.stringify(outer)} ;;
+  *) echo stable ;;
+esac
+`);
+    fs.chmodSync(gitStub, 0o755);
+    fs.symlinkSync(gitStub, path.join(m.path, "git"));
+
+    const r = spawnSync(process.execPath, [path.join(pkg, "bin", "doppler.mjs"), "doctor"], {
+      encoding: "utf8",
+      env: { ...process.env, HOME: m.home, PATH: m.path, DOPPLER_HOME: path.join(m.home, ".doppler") },
+    });
+    assert.match(out(r), /ok {4}cli — .*pkg — \d+\.\d+\.\d+(-\d+)?$/m);
+    assert.doesNotMatch(out(r), /on stable/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("doctor names a registration pointing somewhere that no longer exists", () => {
   // The exact silent-inert case: the entry is present, the config parses, and
   // nothing is delivered.
