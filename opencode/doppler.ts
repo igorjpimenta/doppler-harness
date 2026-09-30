@@ -177,12 +177,57 @@ function enforce(input: { tool: string; sessionID: string }, output: { args?: un
 // exception, and no catch-all is ever emitted: doppler widens nothing, so an
 // unmatched command keeps the host's own default instead of inheriting
 // something doppler chose.
+// Patterns a hook may ask about, declared beside it as `<hook>.ask.json`.
+//
+// A hook that answers `ask` cannot raise a prompt: it runs in tool.execute.before,
+// which is after the harness has already settled the call's permission, so nothing
+// the hook says can open a prompt afterwards. Left alone that leaves the model as
+// the messenger — it has to be told to raise the question, and a model that never
+// does is only stopped by refusing the command.
+//
+// Declaring the patterns moves the prompt back to the harness. Each one is
+// compiled into config.permission as an ask, so the prompt is the harness's own,
+// raised before the hook runs and invisible to the model; the hook still runs
+// afterwards and keeps deny. The declaration is the hook's promise that it may
+// ask about exactly these, so every match is prompted — the cost of taking the
+// model out of the decision.
+//
+// `<hook>.ask.json` rather than an export: hooks are exec'd node scripts with no
+// module surface, and a second small file keeps this out of the hook protocol.
+function declaredAskPatterns(): string[] {
+  const dir = paths().hooks;
+  const out: string[] = [];
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const f of files) {
+    if (!f.endsWith(".mjs") || f.endsWith(".example.mjs")) continue;
+    const decl = f.replace(/\.mjs$/, ".ask.json");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(path.join(dir, decl), "utf8"));
+    } catch {
+      // No declaration is the common case and means this hook denies or has no
+      // opinion, so nothing to ask. A malformed one is reported by doctor, which
+      // is where a policy that reads as in force and is not belongs.
+      continue;
+    }
+    const ask = (parsed as { ask?: unknown })?.ask;
+    if (!Array.isArray(ask)) continue;
+    for (const p of ask) if (typeof p === "string" && p) out.push(p);
+  }
+  return out;
+}
+
 function compiledPermission() {
   let rules: Allowlist;
   try {
     rules = JSON.parse(fs.readFileSync(path.join(paths().home, "policy", "allowlist.json"), "utf8"));
   } catch {
-    return null;
+    rules = {};
   }
   const permission: Record<string, unknown> = {};
 
@@ -197,13 +242,16 @@ function compiledPermission() {
     if (typeof r?.pattern !== "string" || !r.pattern) continue;
     bash[r.pattern] = "ask";
   }
+  // A hook's declared asks join the same tier for the same reason: they are the
+  // user being asked, so they have to reach the user as a prompt.
+  for (const p of declaredAskPatterns()) bash[p] = "ask";
   for (const r of rules.allow ?? []) {
     if (typeof r?.pattern !== "string" || !r.pattern) continue;
     if (bash[r.pattern] === undefined) bash[r.pattern] = "allow";
   }
   if (Object.keys(bash).length) permission.bash = bash;
 
-  return permission;
+  return Object.keys(permission).length ? permission : null;
 }
 
 // OpenCode evaluates the LAST matching pattern, so doppler's rules are

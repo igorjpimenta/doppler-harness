@@ -385,6 +385,49 @@ function doctor() {
   if (hooks.length) ok("hooks", `${hooks.length}: ${hooks.join(", ")}`);
   else warn("hooks", `none in ${hooksDir}, so nothing is enforced — see the README`);
 
+  // A hook that declares the patterns it may ask about gets them compiled into the
+  // harness's own permission prompt, so the ask reaches the user without the model
+  // in the loop. A declaration that does not parse is a prompt the author believes
+  // is in force and is not, which is the silent half-enforcement this exists to
+  // name — and an ask that reaches the model instead is worth naming too, because
+  // it is reported as a block rather than a prompt.
+  const declared = [];
+  const badDecls = [];
+  for (const h of hooks) {
+    const decl = path.join(hooksDir, h.replace(/\.mjs$/, ".ask.json"));
+    let parsed = null;
+    let present = false;
+    try {
+      parsed = JSON.parse(fs.readFileSync(decl, "utf8"));
+      present = true;
+    } catch (e) {
+      if (e.code !== "ENOENT") badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: ${String(e.message).slice(0, 40)}`);
+    }
+    if (!present) continue;
+    const ask = parsed?.ask;
+    if (!Array.isArray(ask)) {
+      badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: no "ask" array`);
+      continue;
+    }
+    const good = ask.filter((p) => typeof p === "string" && p);
+    if (good.length !== ask.length) badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: non-string pattern`);
+    if (!good.length) badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: declares nothing`);
+    else declared.push(`${h} → ${good.join(", ")}`);
+    // A hook runs before the harness settles a call's permission, so a hook that
+    // answers `ask` for a declared pattern blocks the call before the prompt can
+    // be raised. The user is asked in a block message the model carries, which is
+    // the thing the declaration exists to avoid — and it happens silently, so it
+    // is named here.
+    const body = fs.readFileSync(path.join(hooksDir, h), "utf8");
+    if (good.length && /["']ask["']/.test(body)) {
+      badDecls.push(
+        `${h} declares patterns and also answers ask — its block preempts the prompt; answer deny only`,
+      );
+    }
+  }
+  if (declared.length) ok("declared asks", `${declared.length}: ${declared.join("; ")}`);
+  for (const b of badDecls) warn("ask declaration", `${b} — no prompt will be raised for it`);
+
   // A policy file that does not compile is the same shape of problem: the
   // bridge reads it at startup and finds nothing.
   const allowlist = path.join(HOME, "policy", "allowlist.json");
