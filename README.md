@@ -102,7 +102,7 @@ export OPENCODE_BIN=/path/to/opencode
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md
-  opencode/doppler.ts             the engine, refreshed on every install
+  opencode.json                   generated: where the root is
 
 package root
   opencode/doppler.ts             the ONLY file that knows OpenCode exists
@@ -115,13 +115,18 @@ policy *formats*, and registers the bridge; everything else is yours to write.
 That is one rule with a reason: a policy you did not choose is not a policy, and
 one that is silently overwritten on update is not yours either.
 
-The one file the installer does copy is the bridge itself, into
-`~/.doppler/opencode/`. It is a copy so that the path OpenCode is given points
-at *your* directory rather than at `node_modules`, which npm owns and may
-repoint on any reinstall. A registration into npm's directory survives the move
-and silently loads nothing. This copy is rewritten on every `install` and
-`update`, so it cannot drift from the package, and `doppler doctor` says so if
-it ever does.
+**The engine has no copy.** The registration points at the bridge where the
+package is installed, and the personal root holds only your files. An earlier
+design kept a copy of the bridge in the root, to survive npm repointing its own
+install directory — but a copy outlives the package, so uninstalling it left
+policy enforcing with no CLI left to turn it off. Removal has to remove.
+
+So the failure mode is a broken registration instead of a silent one: if npm
+moves its directory the entry names a path with nothing at it, and `doppler
+doctor` says so — `registered path resolves`, plus a warning that the entry sits
+inside `node_modules` and can be repointed. One `doppler install opencode` fixes
+it. An older install's copy, if you have one, is removed the next time you
+install or update.
 
 **Nothing is enforced until you write a hook.** A fresh install registers the
 bridge, which delivers your skills, agents and permission rules, and warns once
@@ -197,46 +202,7 @@ step and no `dist/`, so there is nothing to go stale.
 The installer and the config splicer are JavaScript, and that is not a
 preference. Node refuses to strip types for files under `node_modules`, so a
 TypeScript entry point cannot be `npm install`ed at all — the documented install
-path would fail on every machine. The bridge escapes this only because it is
-copied to `~/.doppler/opencode/` and loaded from there.
+  path would fail on every machine. The bridge escapes this only because OpenCode
+  transpiles it with Bun, which has no such restriction, and it is never handed to
+  Node.
 
-### Testing a local change
-
-Run it from the checkout, without touching the global install:
-
-```bash
-node bin/doppler.mjs doctor          # the checkout's own copy
-```
-
-`DOPPLER_HOME` moves where the *root* is scaffolded, but `install` still edits
-your real `~/.config/opencode` registration to point at it — so a throwaway
-install leaves your live harness pointed at a scratch directory. `doctor` and
-`uninstall` are safe under `DOPPLER_HOME`; `install` is not. To get a real
-test install, use a throwaway `HOME` instead:
-
-```bash
-DOPPLER_HOME=/tmp/scratch node bin/doppler.mjs install opencode
-HOME=/tmp/scratch-home node bin/doppler.mjs install opencode   # isolated
-rm -rf /tmp/scratch /tmp/scratch-home
-```
-
-The `cli` line `doctor` prints is how you tell which copy you are running:
-
-```
-ok    cli — ~/dev/doppler-harness on main — 2026.9.29-3     # the checkout
-ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.9.29-3  # a global install
-```
-
-A branch name there means unreleased code. A global install pinned by tag has no
-branch, because it is not a checkout.
-
-If you want the global `doppler` to track your edits instead of a tag, link it:
-
-```bash
-npm link            # in the checkout — `doppler` now runs your working copy
-```
-
-The trade is that `doppler version` then reports whatever branch is checked out,
-including branches that were never released, and `doctor` cannot tell you that
-`install` came from a released tag. Link it to iterate; re-pin with
-`npm install -g github:igorjpimenta/doppler-harness#<tag>` when you are done.

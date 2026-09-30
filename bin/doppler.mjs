@@ -13,6 +13,10 @@
 //             hook takes effect on the next opencode start — nothing to
 //             re-install, because nothing was ever copied.
 //
+// The engine lives in the package and nowhere else. Uninstalling the package
+// therefore stops everything it did: there is no second copy of the bridge
+// left in the personal root to keep enforcing.
+//
 // Usage:
 //   doppler install opencode
 //   node ~/.doppler/bin/doppler.mjs install opencode
@@ -44,19 +48,21 @@ try {
   // package.json unreadable: the version is a nicety, the checks are not
 }
 
-// The bridge is registered from INSIDE the personal root, not from PKG. Under
-// `npm install -g` PKG is a path into node_modules that npm owns and may
-// repoint on any reinstall; a config entry pointing there survives the move and
-// silently loads nothing, so the user's skills, agents, permissions and every
-// hook stop being delivered with no error anywhere. This path is the user's own
-// directory, so the only way it goes stale is the user deleting it — and doctor
-// says so when they do.
+// The bridge is registered from the package, read in place. It is the only file
+// that knows a harness exists, so it belongs to the engine and stays where the
+// engine is installed — one file, one source of truth, nothing to refresh.
 //
-// The file is a copy, refreshed on every install and update. That is a
-// deliberate exception to "no copies": a copy refreshed on every run cannot
-// drift, and the alternative is a registration that npm can invalidate.
-const BRIDGE = path.join(HOME, "opencode", "doppler.ts");
-const BRIDGE_SRC = path.join(PKG, "opencode", "doppler.ts");
+// The earlier design registered a copy from inside the personal root, to survive
+// npm repointing its own directory. That traded one failure for a worse one: a
+// copy in the root outlives the package, so uninstalling it left policy
+// enforcing with no CLI left to turn it off. Removal has to remove, so the
+// package's path is the one that gets registered and the cost of npm moving it
+// is a broken registration that `doctor` names rather than a silent one.
+//
+// An older install may have left a copy behind. It is not loaded — the
+// registration points here — but it answers to the same name, so remove it.
+const BRIDGE = path.join(PKG, "opencode", "doppler.ts");
+const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
 
@@ -69,10 +75,18 @@ function packageJson() {
 // stay that way — the user writes the hooks, and the bridge execs whatever it
 // finds there. Only the policy *format* examples are seeded, because a format
 // with no example is not a format.
+//
+// Idempotent by construction rather than by a marker file: every step below is
+// "create if absent", so re-running is a no-op. A marker in the personal root
+// would be installer state living in the user's directory, gating nothing that
+// a directory-existence check does not already gate.
 function scaffold() {
-  const marker = path.join(HOME, ".doppler-initialized");
-  if (fs.existsSync(marker)) return "existing";
-  for (const d of ["hooks", "agents", "skills", "policy"]) fs.mkdirSync(path.join(HOME, d), { recursive: true });
+  let first = false;
+  for (const d of ["hooks", "agents", "skills", "policy"]) {
+    const p = path.join(HOME, d);
+    if (!fs.existsSync(p)) first = true;
+    fs.mkdirSync(p, { recursive: true });
+  }
   // Every policy file here is an example, and each becomes its real name on
   // first run: the reader looks for the plain name, so an untouched example
   // means the policy is inert rather than absent. The hook example goes to
@@ -82,14 +96,13 @@ function scaffold() {
   for (const f of fs.readdirSync(path.join(PKG, "policy"))) {
     if (f.endsWith(".example.mjs")) {
       const dst = path.join(HOME, "hooks", f);
-      if (!fs.existsSync(dst)) fs.copyFileSync(path.join(PKG, "policy", f), dst);
+      if (!fs.existsSync(dst)) { fs.copyFileSync(path.join(PKG, "policy", f), dst); first = true; }
     } else if (f.endsWith(".example.json")) {
       const dst = path.join(HOME, "policy", f.replace(".example", ""));
-      if (!fs.existsSync(dst)) fs.copyFileSync(path.join(PKG, "policy", f), dst);
+      if (!fs.existsSync(dst)) { fs.copyFileSync(path.join(PKG, "policy", f), dst); first = true; }
     }
   }
-  fs.writeFileSync(marker, new Date().toISOString() + "\n");
-  return "scaffolded";
+  return first ? "scaffolded" : "existing";
 }
 
 // Where the bridge should point, written on every run: the personal root is
@@ -103,21 +116,16 @@ function writeRootManifest() {
   }, null, 2) + "\n");
 }
 
-// Refresh the registered bridge from the package on every install and update, so
-// a package upgrade reaches the engine without a second step. Returned so the
-// caller can tell "updated" from "unchanged".
-function syncBridge() {
-  const next = fs.readFileSync(BRIDGE_SRC);
-  const current = (() => { try { return fs.readFileSync(BRIDGE); } catch { return null; } })();
-  // Only one engine may sit in the root: a stale sibling is not loaded, but it
-  // answers to the same name and would be picked up by anyone looking for it.
-  for (const old of [BRIDGE.replace(/\.ts$/, ".js")]) {
-    try { fs.unlinkSync(old); } catch {}
+// An install from the copy-based design left the engine inside the personal
+// root, and possibly a .js sibling from the release before that. Neither is
+// loaded — the registration points at the package — but both answer to the name
+// someone would look for, so a run that registers removes them.
+function removeStaleBridgeCopies() {
+  let removed = 0;
+  for (const p of [STALE_BRIDGE, STALE_BRIDGE.replace(/\.ts$/, ".js")]) {
+    try { fs.unlinkSync(p); removed += 1; } catch {}
   }
-  if (current && current.equals(next)) return "current";
-  fs.mkdirSync(path.dirname(BRIDGE), { recursive: true });
-  fs.writeFileSync(BRIDGE, next);
-  return "updated";
+  return removed;
 }
 
 // OpenCode reads opencode.json and opencode.jsonc; a user is as likely to have
@@ -217,8 +225,9 @@ function verify() {
 
 function installOpencode() {
   console.log(`personal root: ${scaffold()} (${HOME})`);
+  const stale = removeStaleBridgeCopies();
+  if (stale) console.log(`removed ${stale} stale engine cop${stale === 1 ? "y" : "ies"} from the personal root`);
   writeRootManifest();
-  console.log(`bridge: ${syncBridge()} → ${BRIDGE}`);
   const r = register();
   console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${entry()}`);
   verify();
@@ -235,10 +244,11 @@ function update() {
   if (fs.existsSync(path.join(HOME, ".git"))) sh(`git -C ${HOME} pull --ff-only`);
   else console.log(`${HOME} is not a git clone — nothing to pull (npm delivery model).`);
   writeRootManifest();
-  // Refresh the engine before re-registering, so the path and the file behind it
-  // always agree. Registering a path whose contents are stale is the one thing
-  // that makes "installed" and "working" disagree.
-  console.log(`bridge: ${syncBridge()}`);
+  // The engine is read from the package, so there is nothing to refresh and
+  // nothing to re-sync: the registered path and the file behind it cannot
+  // disagree, because they are the same file. Re-registering only picks up a
+  // package that has moved.
+  removeStaleBridgeCopies();
   register();
   console.log(`updated to ${packageJson().version}`);
   console.log("restart opencode to pick it up.");
@@ -300,19 +310,10 @@ function doctor() {
   }
   ok("cli", `${rel(PKG)}${vcs} — ${PKG_VERSION}`);
 
-  // The bridge is a copy refreshed on every install. A missing one means either
-  // an uninstall or a half-finished install, and in both cases nothing runs.
+  // The bridge is read in place from the package. A missing one means the
+  // install is broken, not half-finished, and nothing will load.
   if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
   else bad("bridge file", `missing at ${BRIDGE}`, "doppler install opencode");
-
-  // A package upgrade that did not run install leaves an old bridge in place.
-  // Not fatal, and not something to overwrite here — but worth naming, because
-  // "updated the CLI, behaviour unchanged" is otherwise a mystery.
-  if (fs.existsSync(BRIDGE) && fs.existsSync(BRIDGE_SRC)) {
-    const same = fs.readFileSync(BRIDGE).equals(fs.readFileSync(BRIDGE_SRC));
-    if (same) ok("bridge matches the installed package");
-    else warn("bridge is older than the package", `run: doppler install opencode`);
-  }
 
   // The registration is the thing that can go stale without anything moving.
   // Read with the splicer rather than JSON.parse: a config carrying comments is
@@ -337,6 +338,13 @@ function doctor() {
       bad("registered path resolves", `no such file: ${registered}`, "doppler install opencode");
     } else {
       ok("registered path resolves");
+    }
+    // npm owns its global install directory and may repoint it on any
+    // reinstall, which would leave this entry naming a path with nothing at it.
+    // Naming that is the difference between a fixable report and one that blames
+    // the wrong thing — the entry is present and syntactically fine either way.
+    if (registered.includes(`${path.sep}node_modules${path.sep}`)) {
+      warn("registered path is inside node_modules", "npm can repoint that on reinstall; re-run doppler install opencode if it goes missing");
     }
   } else {
     bad("registered in opencode config", `no doppler entry in ${cfg}`, "doppler install opencode");

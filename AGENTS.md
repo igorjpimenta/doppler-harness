@@ -29,7 +29,7 @@ A policy the user did not choose is not a policy, and one silently overwritten
 on update is not theirs — so the first run seeds formats and stops there.
 
 - `opencode/doppler.ts` — the bridge. Engine-owned, read in place from the
-  package, never copied. It is the only file that knows OpenCode exists, and
+  package. It is the only file that knows OpenCode exists, and
   the only file typed against `@opencode-ai/plugin`.
 - `bin/doppler.mjs` — the installer; the only entry point that touches harness
   config. `bin/jsonc.mjs` — the config splicer it uses.
@@ -37,8 +37,8 @@ on update is not theirs — so the first run seeds formats and stops there.
 The bridge is TypeScript, transpiled by Bun at plugin load. `bin/` is
 JavaScript and cannot be otherwise: Node refuses to strip types for a file under
 `node_modules`, so a TypeScript entry point cannot be `npm install`ed at all. The
-bridge escapes that only because it is copied to `~/.doppler/opencode/` and
-loaded from there. Runtime imports stay `node:` builtins only;
+bridge escapes that because OpenCode transpiles it with Bun, which has no such
+restriction, and Node never loads it. Runtime imports stay `node:` builtins only;
 `@opencode-ai/plugin` is imported for *types* and erased, so an OpenCode that
 stopped shipping it could not break startup. Note that its published `Config`
 type has no `skills` field at the version we target, though the harness reads
@@ -50,12 +50,14 @@ one — that single boundary is cast, and says so.
 - hooks, agents, skills — **not in the package at all.** They are the user's and
   live in the personal root; the bridge reads them at startup.
 
-The one copy the installer makes is the bridge itself, to
-`~/.doppler/opencode/doppler.ts`. The path OpenCode is given must point at the
-user's own directory, not at a `node_modules` npm can repoint on any reinstall:
-such a registration survives the move and silently loads nothing, which is the
-failure `doctor` exists to name. The copy is rewritten on every install and
-update, so it cannot drift.
+**The engine is never copied.** The registration points at the bridge inside the
+package. That used to be a copy in `~/.doppler/opencode/`, chosen because a
+`node_modules` path is one npm can repoint — but a copy in the personal root
+outlives the package, so uninstalling it left policy enforcing with no CLI left
+to turn it off. Removal has to remove, and the failure that remains is a
+*visible* one: a repointed path fails `registered path resolves` and is named as
+`registered path is inside node_modules`. `install` and `update` delete a copy an
+older version left behind.
 
 Runtime state (session state) and machine-local wiring (`opencode.json` in the
 personal root) live in `~/.doppler`, never in this repo.
