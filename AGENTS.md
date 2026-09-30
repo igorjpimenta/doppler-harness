@@ -51,13 +51,13 @@ one — that single boundary is cast, and says so.
   live in the personal root; the bridge reads them at startup.
 
 **The engine is never copied.** The registration points at the bridge inside the
-package. That used to be a copy in `~/.doppler/opencode/`, chosen because a
-`node_modules` path is one npm can repoint — but a copy in the personal root
-outlives the package, so uninstalling it left policy enforcing with no CLI left
-to turn it off. Removal has to remove, and the failure that remains is a
-*visible* one: a repointed path fails `registered path resolves` and is named as
-`registered path is inside node_modules`. `install` and `update` delete a copy an
-older version left behind.
+package, so removing the package removes the engine. A copy under the personal
+root is not an acceptable substitute for `node_modules` being repointed: it
+outlives the package, and removal has to remove. The repointing risk is handled
+by naming it instead — a repointed path fails `registered path resolves` and is
+flagged as `registered path is inside node_modules`. `install` and `update` also
+delete any engine file already sitting in the personal root, so a root written
+by an earlier design is cleaned up rather than left able to keep enforcing.
 
 Runtime state (session state) and machine-local wiring (`opencode.json` in the
 personal root) live in `~/.doppler`, never in this repo.

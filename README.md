@@ -116,17 +116,16 @@ That is one rule with a reason: a policy you did not choose is not a policy, and
 one that is silently overwritten on update is not yours either.
 
 **The engine has no copy.** The registration points at the bridge where the
-package is installed, and the personal root holds only your files. An earlier
-design kept a copy of the bridge in the root, to survive npm repointing its own
-install directory — but a copy outlives the package, so uninstalling it left
-policy enforcing with no CLI left to turn it off. Removal has to remove.
+package is installed, and the personal root holds only your files. Uninstall the
+package and the engine goes with it — there is no second copy left behind to keep
+enforcing.
 
-So the failure mode is a broken registration instead of a silent one: if npm
-moves its directory the entry names a path with nothing at it, and `doppler
-doctor` says so — `registered path resolves`, plus a warning that the entry sits
-inside `node_modules` and can be repointed. One `doppler install opencode` fixes
-it. An older install's copy, if you have one, is removed the next time you
-install or update.
+That does mean the registration sits in a directory npm owns, which npm may
+repoint on any reinstall. When that happens the entry names a path with nothing
+at it, and `doppler doctor` says so: `registered path resolves` fails, and a
+warning flags that the entry is inside `node_modules`. One `doppler install
+opencode` points it back at the package. An engine file left in your root by an
+older install is removed the next time you install or update.
 
 **Nothing is enforced until you write a hook.** A fresh install registers the
 bridge, which delivers your skills, agents and permission rules, and warns once

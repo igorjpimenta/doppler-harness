@@ -50,17 +50,18 @@ try {
 
 // The bridge is registered from the package, read in place. It is the only file
 // that knows a harness exists, so it belongs to the engine and stays where the
-// engine is installed — one file, one source of truth, nothing to refresh.
+// engine is installed — one file, one source of truth, nothing to refresh, and
+// nothing left behind to keep running after the package is removed.
 //
-// The earlier design registered a copy from inside the personal root, to survive
-// npm repointing its own directory. That traded one failure for a worse one: a
-// copy in the root outlives the package, so uninstalling it left policy
-// enforcing with no CLI left to turn it off. Removal has to remove, so the
-// package's path is the one that gets registered and the cost of npm moving it
-// is a broken registration that `doctor` names rather than a silent one.
+// That places the registration inside a directory npm owns and may repoint on
+// any reinstall, which would leave the entry naming a path with nothing at it.
+// The entry is reported broken rather than allowed to sit there: doctor names
+// `registered path resolves` for the missing file and
+// `registered path is inside node_modules` for the directory that can move, so
+// the cause and the fix are both on screen.
 //
-// An older install may have left a copy behind. It is not loaded — the
-// registration points here — but it answers to the same name, so remove it.
+// A copy under the personal root is never the answer. It would answer the same
+// repointing risk, and it outlives the package: removal has to remove.
 const BRIDGE = path.join(PKG, "opencode", "doppler.ts");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
