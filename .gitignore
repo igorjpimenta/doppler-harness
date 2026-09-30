@@ -1,6 +1,6 @@
 # Allowlist strategy (same as claude-config): ignore everything, re-include
 # only canonical content. This also covers machine state the installer writes
-# into an installed root (opencode.json, .doppler-initialized), which is why
+# into an installed root (opencode.json), which is why
 # there is no per-clone .git/info/exclude handling.
 /*
 
