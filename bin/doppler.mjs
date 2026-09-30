@@ -282,10 +282,19 @@ function doctor() {
   const rel = (p) => p.replace(os.homedir(), "~");
   let vcs = "";
   try {
-    const branch = execSync(`git -C ${JSON.stringify(PKG)} rev-parse --abbrev-ref HEAD`, {
+    // `git -C PKG` searches upward, so a package nested inside an unrelated repo
+    // — node_modules under someone's home dotfiles, or under /opt/homebrew — would
+    // otherwise report that repo's branch as if it were the package's. The package
+    // is a checkout only if it is itself the repository root.
+    const top = execSync(`git -C ${JSON.stringify(PKG)} rev-parse --show-toplevel`, {
       stdio: ["ignore", "pipe", "ignore"],
     }).toString().trim();
-    if (branch && branch !== "HEAD") vcs = ` on ${branch}`;
+    if (path.resolve(top) === PKG) {
+      const branch = execSync(`git -C ${JSON.stringify(PKG)} rev-parse --abbrev-ref HEAD`, {
+        stdio: ["ignore", "pipe", "ignore"],
+      }).toString().trim();
+      if (branch && branch !== "HEAD") vcs = ` on ${branch}`;
+    }
   } catch {
     // not a checkout, or no git
   }
