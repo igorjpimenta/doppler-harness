@@ -283,3 +283,76 @@ test("a broken personal root degrades to no doppler, never to a failed startup",
     await plugin.config(cfg);
   });
 });
+
+// --- declared ask patterns --------------------------------------------------
+//
+// A hook that answers `ask` runs after the harness has settled the call's
+// permission, so it cannot open a prompt itself. Declaring the patterns beside
+// the hook gets them compiled into config.permission instead, which is the only
+// route to a prompt that does not go through the model.
+
+const declares = (body) => ({
+  hooks: { "asker.mjs": hook("ask"), "asker.ask.json": body },
+});
+
+test("a declared pattern compiles to a permission ask", async () => {
+  await withRoot(declares(JSON.stringify({ ask: ["*doppler doctor*"] })), async (_, plugin) => {
+    const cfg = {};
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.permission, { bash: { "*doppler doctor*": "ask" } });
+  });
+});
+
+test("an allowlist allow does not swallow a declared ask", async () => {
+  await withRoot(
+    {
+      hooks: { "asker.mjs": hook("ask"), "asker.ask.json": JSON.stringify({ ask: ["*doppler doctor*"] }) },
+      policy: { "allowlist.json": JSON.stringify({ allow: [{ pattern: "*doppler doctor*" }] }) },
+    },
+    async (_, plugin) => {
+      const cfg = {};
+      await plugin.config(cfg);
+      assert.equal(cfg.permission.bash["*doppler doctor*"], "ask");
+    },
+  );
+});
+
+test("a hook with no declaration contributes nothing", async () => {
+  await withRoot({ hooks: { "plain.mjs": hook("deny") } }, async (_, plugin) => {
+    const cfg = {};
+    await plugin.config(cfg);
+    assert.equal(cfg.permission, undefined);
+  });
+});
+
+test("a malformed declaration does not become a permission", async () => {
+  await withRoot(declares("{ not json"), async (_, plugin) => {
+    const cfg = {};
+    await plugin.config(cfg);
+    assert.equal(cfg.permission, undefined);
+  });
+});
+
+test("non-string patterns are dropped rather than compiled", async () => {
+  await withRoot(declares(JSON.stringify({ ask: ["*ok*", 7, null] })), async (_, plugin) => {
+    const cfg = {};
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.permission.bash, { "*ok*": "ask" });
+  });
+});
+
+test("an example hook's declaration is not read", async () => {
+  await withRoot(
+    {
+      hooks: {
+        "x.example.mjs": hook("ask"),
+        "x.example.ask.json": JSON.stringify({ ask: ["*never*"] }),
+      },
+    },
+    async (_, plugin) => {
+      const cfg = {};
+      await plugin.config(cfg);
+      assert.equal(cfg.permission, undefined);
+    },
+  );
+});

@@ -103,10 +103,9 @@ const configOf = (m) => {
   return null;
 };
 
-test("the bridge is registered from the personal root, never from node_modules", () => {
-  // The failure this prevents: under `npm install -g` the package lives in a
-  // node_modules path npm owns and may repoint, and a config entry pointing
-  // there survives the move and silently loads nothing.
+test("the bridge is registered from the package, and no copy is left in the root", () => {
+  // One file, in the package. A copy in the personal root outlives the package,
+  // so uninstalling it would leave policy enforcing with no CLI left to stop it.
   const m = machine();
   const home = path.join(m.home, ".doppler");
   try {
@@ -114,8 +113,30 @@ test("the bridge is registered from the personal root, never from node_modules",
     const [entry] = configOf(m).plugin;
     assert.ok(entry.startsWith("file://"), entry);
     const file = decodeURIComponent(new URL(entry).pathname);
-    assert.equal(file, path.join(home, "opencode", "doppler.ts"));
+    assert.equal(file, path.join(ROOT, "dist", "doppler.js"));
     assert.ok(fs.existsSync(file), "the registered path must exist");
+    // The whole point: nothing engine-shaped survives in the user's directory.
+    assert.equal(fs.existsSync(path.join(home, "opencode", "doppler.ts")), false);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("uninstalling the package stops enforcement, because no copy outlives it", () => {
+  // The failure this prevents, and the reason the registration points into the
+  // package: with a copy in the root, deleting the package left the copy
+  // enforcing. A user's removal has to remove.
+  const m = machine();
+  const home = path.join(m.home, ".doppler");
+  try {
+    run(m, ["install", "opencode"]);
+    // Simulate the package being gone, which is what uninstalling does to it.
+    const stale = path.join(home, "opencode", "doppler.ts");
+    fs.mkdirSync(path.dirname(stale), { recursive: true });
+    // A copy is exactly what the installer must never have produced; assert the
+    // install does not, and that no sibling is left that could stand in for it.
+    assert.equal(fs.existsSync(stale), false);
+    assert.deepEqual(fs.readdirSync(path.join(home, "hooks")).filter((f) => f.endsWith("doppler.ts")), []);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -154,7 +175,7 @@ test("install preserves the user's own plugins and comments", () => {
       .map((e) => JSON.parse(e));
     assert.equal(plugins.length, 2);
     assert.ok(plugins[0].includes("opencode-gemini-auth"), "the user's plugin is kept");
-    assert.match(plugins[1], /doppler\.ts$/, "doppler's entry is appended");
+    assert.match(plugins[1], /dist\/doppler\.js$/, "doppler's entry is appended");
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -256,11 +277,15 @@ esac
 
 test("doctor names a registration pointing somewhere that no longer exists", () => {
   // The exact silent-inert case: the entry is present, the config parses, and
-  // nothing is delivered.
+  // nothing is delivered. The engine now lives in the package, so the way to
+  // reach it is a registration whose target is gone.
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
-    fs.rmSync(path.join(m.home, ".doppler", "opencode", "doppler.ts"));
+    const cfg = path.join(m.cfgDir, "opencode.json");
+    const c = JSON.parse(fs.readFileSync(cfg, "utf8"));
+    c.plugin = ["file:///gone/opencode/doppler.ts"];
+    fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     const r = run(m, ["doctor"]);
     assert.equal(r.status, 1);
     assert.match(out(r), /registered path resolves/);
@@ -296,25 +321,47 @@ test("install repairs a stale registration", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["install", "opencode"]).status, 0);
     assert.equal(configOf(m).plugin.length, 1);
-    assert.match(configOf(m).plugin[0], /\.doppler\/opencode\/doppler\.ts$/);
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
     assert.equal(run(m, ["doctor"]).status, 0);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
 });
 
-test("install leaves exactly one engine in the root", () => {
+test("install and update remove a stale engine copy from the personal root", () => {
+  // An install from the copy-based design left the engine in the root. It is not
+  // loaded — the registration points at the package — but it outlives the package
+  // and answers to the name someone would look for, so a registering run removes
+  // it. Both the .ts and the .js spelling from the release before that.
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
-    // A sibling that is not the registered engine is a hazard whatever put it
-    // there: it answers to the same name and nothing loads it.
-    const old = path.join(m.home, ".doppler", "opencode", "doppler.js");
-    fs.writeFileSync(old, "// a stale engine\n");
-    assert.equal(fs.existsSync(old), true);
+    const dir = path.join(m.home, ".doppler", "opencode");
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of ["doppler.ts", "doppler.js"]) fs.writeFileSync(path.join(dir, f), "// a stale engine\n");
+    assert.equal(fs.existsSync(path.join(dir, "doppler.ts")), true);
     run(m, ["update"]);
-    assert.equal(fs.existsSync(old), false);
-    assert.equal(fs.existsSync(path.join(m.home, ".doppler", "opencode", "doppler.ts")), true);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("doctor warns when the registration points into node_modules", () => {
+  // The engine is read from the package, and under `npm install -g` that is a
+  // path npm owns and may repoint on any reinstall. The entry would survive the
+  // move and load nothing, so it is named — as a warning, not a failure, since
+  // nothing is wrong with the install right now.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    const cfg = path.join(m.cfgDir, "opencode.json");
+    const c = JSON.parse(fs.readFileSync(cfg, "utf8"));
+    c.plugin = ["file:///usr/lib/node_modules/@igorjpimenta/doppler-harness/opencode/doppler.ts"];
+    fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
+    const r = run(m, ["doctor"]);
+    assert.match(out(r), /warn {2}registered path is inside node_modules/);
+    assert.match(out(r), /npm can repoint that on reinstall/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -400,18 +447,20 @@ test("uninstall removes the entry and leaves the personal root alone", () => {
   }
 });
 
-test("update refreshes the bridge from the package", () => {
-  // Otherwise a package upgrade needs a second manual step, and "I updated the
-  // CLI and nothing changed" has no explanation.
+test("update re-registers the package's own bridge, so a move is self-healing", () => {
+  // There is nothing to refresh: the registered path and the file behind it are
+  // the same file, so they cannot disagree. What update does have to do is notice
+  // that the package moved and point the entry at where it is now — which is why
+  // re-registering is not a no-op.
   const m = machine();
-  const home = path.join(m.home, ".doppler");
   try {
     run(m, ["install", "opencode"]);
-    const bridge = path.join(home, "opencode", "doppler.ts");
-    fs.writeFileSync(bridge, "// stale engine\n");
+    const cfg = path.join(m.cfgDir, "opencode.json");
+    const c = JSON.parse(fs.readFileSync(cfg, "utf8"));
+    c.plugin = ["file:///moved/package/opencode/doppler.ts"];
+    fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["update"]).status, 0);
-    assert.notEqual(fs.readFileSync(bridge, "utf8"), "// stale engine\n");
-    assert.equal(fs.readFileSync(bridge).equals(fs.readFileSync(path.join(ROOT, "opencode", "doppler.ts"))), true);
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
