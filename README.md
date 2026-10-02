@@ -195,8 +195,14 @@ npm run typecheck
 ```
 
 The bridge is TypeScript and is the only file typed against
-`@opencode-ai/plugin`; OpenCode transpiles it with Bun at load. There is no build
-step and no `dist/`, so there is nothing to go stale.
+`@opencode-ai/plugin`. What ships is its build output: `npm run build` erases the
+types into `dist/doppler.js`, and that file is what gets registered. Two runtimes
+load plugins — the TUI's Bun and the desktop app's server, which is Node — and
+Node refuses to strip types for a file under `node_modules`, so the source cannot
+be what loads. `erasableSyntaxOnly` keeps the build a pure type-erasure: the
+`.js` is the same logic Bun was producing at load time, just ahead of time.
+`npm run prepare` builds on every install path, so a git or tarball install never
+sees a stale `dist/`.
 
 The installer and the config splicer are JavaScript, and that is not a
 preference. Node refuses to strip types for files under `node_modules`, so a

@@ -62,7 +62,13 @@ try {
 //
 // A copy under the personal root is never the answer. It would answer the same
 // repointing risk, and it outlives the package: removal has to remove.
-const BRIDGE = path.join(PKG, "opencode", "doppler.ts");
+// The bridge ships as built JavaScript in dist/, not as the .ts source it is
+// checked as. Both runtimes that load plugins have to load the same file: the
+// TUI's Bun strips types anywhere, but the desktop app's server is Node, and
+// Node refuses to strip types for a file under node_modules — which is where a
+// package install lives. Verified as the reason the app silently loaded no
+// engine while the TUI gated fine.
+const BRIDGE = path.join(PKG, "dist", "doppler.js");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
@@ -153,7 +159,12 @@ function readConfig(p) {
 // unencoded URL simply fails to load.
 const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 
-const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
+// Every spelling the engine has ever been registered under is ours to clear:
+// dist/doppler.js is current; opencode/doppler.ts was the pre-dist bridge, in the
+// package or copied into the personal root by the design before that. An entry
+// left behind under an old spelling would keep pointing at a file a newer
+// install is free to stop shipping, so register() removes them all first.
+const isDoppler = (literal) => /\/(dist|opencode)\/doppler\.(mjs|ts|js)"?$/.test(literal);
 
 function register() {
   const p = ocConfigPath();
