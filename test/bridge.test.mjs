@@ -261,6 +261,38 @@ test("skills are registered only when the root has some", async () => {
   });
 });
 
+test("a root AGENTS.md is registered as instructions only when it exists", async () => {
+  // No file, no registration: an instruction path that does not resolve is a
+  // dead entry in every session's config, the same cost as an empty skills/.
+  await withRoot({}, async (_, plugin) => {
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.equal(cfg.instructions, undefined);
+  });
+  await withRoot({}, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# standing instructions\n");
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.instructions, [path.join(home, "AGENTS.md")]);
+  });
+});
+
+test("a root AGENTS.md already listed by the user is not registered twice", async () => {
+  await withRoot({}, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# standing instructions\n");
+    const cfg = { agent: {}, instructions: [path.join(home, "AGENTS.md")] };
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.instructions, [path.join(home, "AGENTS.md")]);
+  });
+  // Entries the user listed besides the root AGENTS.md survive untouched.
+  await withRoot({}, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# standing instructions\n");
+    const cfg = { agent: {}, instructions: ["docs/style.md"] };
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.instructions, ["docs/style.md", path.join(home, "AGENTS.md")]);
+  });
+});
+
 test("overlay skill roots are added, and bad entries ignored", async () => {
   await withRoot({
     skills: { mine: "---\nname: mine\ndescription: d\n---\n" },
