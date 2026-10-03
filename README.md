@@ -77,6 +77,11 @@ export OPENCODE_BIN=/path/to/opencode
   `doppler-<name>` subagents. Namespaced so a personal agent can never shadow a
   built-in (`build`, `plan`, `explore`, `general`) or collide with your own
   agents in `~/.config/opencode/agent/`.
+- **Instructions** — a root `AGENTS.md` becomes standing instructions in every
+  OpenCode session, registered through the config's own `instructions` field and
+  read in place. OpenCode's only native global instructions path lives under
+  `~/.config/opencode/`, and a file there would be a copy of your root that
+  outlives `doppler uninstall`, so the bridge carries the registration instead.
 - **Hooks** — *yours to write.* The bridge runs every `.mjs` in your root's
   `hooks/` on every tool call. A working example ships as
   `policy/hook.example.mjs`; nothing is enforced until you have one. See
@@ -101,7 +106,7 @@ export OPENCODE_BIN=/path/to/opencode
   policy/allowlist.json           permission rules, as data
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
-  agents/*.md   skills/<n>/SKILL.md
+  agents/*.md   skills/<n>/SKILL.md   AGENTS.md
   opencode/doppler.ts             the engine, refreshed on every install
 
 package root
@@ -186,7 +191,7 @@ copied — never edit there. Conventions: Angular commits with scopes; CalVer
 `main` receives code only via PRs.
 
 ```
-npm test         # 64 tests: the splicer, agent parsing, bridge, installer
+npm test         # 66 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 
