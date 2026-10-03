@@ -469,6 +469,18 @@ export const DopplerHarness: Plugin = async ({ client }) => {
           for (const [tool, rule] of Object.entries(permission)) mergePermission(cfg, tool, rule);
         }
 
+        // A root AGENTS.md is the personal root's standing instructions, and it
+        // is registered like the skills above — read in place, deduped against
+        // whatever the user already listed. OpenCode's only native global
+        // instructions path is under ~/.config, and a file there would be a
+        // copy of the root that outlives `doppler uninstall`, so the bridge
+        // carries the registration instead.
+        const agentsMd = path.join(paths().home, "AGENTS.md");
+        if (fs.existsSync(agentsMd)) {
+          const listed = Array.isArray(cfg.instructions) ? cfg.instructions : [];
+          cfg.instructions = [...new Set([...listed, agentsMd])];
+        }
+
         for (const agent of readAgents()) {
           cfg.agent = cfg.agent && typeof cfg.agent === "object" ? cfg.agent : {};
           if (cfg.agent[agent.name]) continue; // the user's own agent wins
