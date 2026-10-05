@@ -62,7 +62,13 @@ try {
 //
 // A copy under the personal root is never the answer. It would answer the same
 // repointing risk, and it outlives the package: removal has to remove.
-const BRIDGE = path.join(PKG, "opencode", "doppler.ts");
+// The bridge ships as built JavaScript in dist/, not as the .ts source it is
+// checked as. Both runtimes that load plugins have to load the same file: the
+// TUI's Bun strips types anywhere, but the desktop app's server is Node, and
+// Node refuses to strip types for a file under node_modules — which is where a
+// package install lives. Verified as the reason the app silently loaded no
+// engine while the TUI gated fine.
+const BRIDGE = path.join(PKG, "dist", "doppler.js");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
@@ -153,7 +159,12 @@ function readConfig(p) {
 // unencoded URL simply fails to load.
 const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 
-const isDoppler = (literal) => /\/opencode\/doppler\.[jt]s"?$/.test(literal);
+// Every spelling the engine has ever been registered under is ours to clear:
+// dist/doppler.js is current; opencode/doppler.ts was the pre-dist bridge, in the
+// package or copied into the personal root by the design before that. An entry
+// left behind under an old spelling would keep pointing at a file a newer
+// install is free to stop shipping, so register() removes them all first.
+const isDoppler = (literal) => /\/(dist|opencode)\/doppler\.(mjs|ts|js)"?$/.test(literal);
 
 function register() {
   const p = ocConfigPath();
@@ -384,6 +395,49 @@ function doctor() {
   } catch {}
   if (hooks.length) ok("hooks", `${hooks.length}: ${hooks.join(", ")}`);
   else warn("hooks", `none in ${hooksDir}, so nothing is enforced — see the README`);
+
+  // A hook that declares the patterns it may ask about gets them compiled into the
+  // harness's own permission prompt, so the ask reaches the user without the model
+  // in the loop. A declaration that does not parse is a prompt the author believes
+  // is in force and is not, which is the silent half-enforcement this exists to
+  // name — and an ask that reaches the model instead is worth naming too, because
+  // it is reported as a block rather than a prompt.
+  const declared = [];
+  const badDecls = [];
+  for (const h of hooks) {
+    const decl = path.join(hooksDir, h.replace(/\.mjs$/, ".ask.json"));
+    let parsed = null;
+    let present = false;
+    try {
+      parsed = JSON.parse(fs.readFileSync(decl, "utf8"));
+      present = true;
+    } catch (e) {
+      if (e.code !== "ENOENT") badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: ${String(e.message).slice(0, 40)}`);
+    }
+    if (!present) continue;
+    const ask = parsed?.ask;
+    if (!Array.isArray(ask)) {
+      badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: no "ask" array`);
+      continue;
+    }
+    const good = ask.filter((p) => typeof p === "string" && p);
+    if (good.length !== ask.length) badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: non-string pattern`);
+    if (!good.length) badDecls.push(`${h.replace(/\.mjs$/, ".ask.json")}: declares nothing`);
+    else declared.push(`${h} → ${good.join(", ")}`);
+    // A hook runs before the harness settles a call's permission, so a hook that
+    // answers `ask` for a declared pattern blocks the call before the prompt can
+    // be raised. The user is asked in a block message the model carries, which is
+    // the thing the declaration exists to avoid — and it happens silently, so it
+    // is named here.
+    const body = fs.readFileSync(path.join(hooksDir, h), "utf8");
+    if (good.length && /["']ask["']/.test(body)) {
+      badDecls.push(
+        `${h} declares patterns and also answers ask — its block preempts the prompt; answer deny only`,
+      );
+    }
+  }
+  if (declared.length) ok("declared asks", `${declared.length}: ${declared.join("; ")}`);
+  for (const b of badDecls) warn("ask declaration", `${b} — no prompt will be raised for it`);
 
   // A policy file that does not compile is the same shape of problem: the
   // bridge reads it at startup and finds nothing.

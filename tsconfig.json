@@ -6,10 +6,6 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
 
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-
     "strict": true,
     // Off deliberately: the splicer indexes into text character by character, so
     // under this flag every `s[i]` is `string | undefined` and the noise buries
@@ -17,12 +13,23 @@
     "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
     // Node strips types, it does not transform them: an enum or a parameter
-    // property would pass tsc and fail at load. This forbids exactly that class.
+    // property would pass tsc and fail at load. This forbids exactly that class,
+    // and it is also what makes the emitted dist a pure type-erasure of the
+    // source — no downleveling, no helpers, nothing to review beyond the diff.
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    // Build output. The .ts is the checked source; dist/doppler.mjs is what
+    // ships, because the desktop app's server runs under Node and Node refuses
+    // to strip types for a file under node_modules. Bun (the TUI/CLI) would
+    // load the .ts fine — dist exists so both runtimes load the same file.
+    "noEmit": false,
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": false
   },
   "include": ["opencode"],
   "exclude": ["node_modules"]

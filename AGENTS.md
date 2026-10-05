@@ -125,16 +125,18 @@ were checked by running rather than by reading.
 
 - Commits: Angular convention **with scopes** — `feat(opencode):`,
   `fix(bridge):`, `chore(release):`, `docs(readme):`.
-- Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
-  `-N`.
-- TypeScript for the bridge only, and no build. `tsc --noEmit` is the check; the
-  shipped file is what runs, types erased by Bun at load. `erasableSyntaxOnly`
-  is on, so no `enum`, no `namespace`, no parameter properties — those pass tsc
-  and fail at runtime, which is the whole failure mode here. `bin/` stays
-  JavaScript because Node refuses to strip types under `node_modules`, so a
-  TypeScript bin cannot be npm-installed at all. `noUncheckedIndexedAccess` is
-  off on purpose: the splicer indexes character by character and the flag buries
-  real errors under `string | undefined`.
+  - Versioning: CalVer `YYYY.M.D` in `package.json`; same-day re-releases append
+    `-N`.
+  - TypeScript for the bridge, built to `dist/doppler.js` by `npm run build`;
+    `npm run prepare` builds on every install path. The `.ts` is the checked
+    source and is never loaded; the `.js` is what runs, because plugins load
+    under two runtimes — Bun in the TUI/CLI, Node in the desktop app's server —
+    and Node refuses to strip types under `node_modules`. `erasableSyntaxOnly`
+    is on, so no `enum`, no `namespace`, no parameter properties — those pass
+    tsc and fail at runtime — and it also makes the build a pure type-erasure.
+    `bin/` stays JavaScript for the same Node restriction. `noUncheckedIndexedAccess`
+    is off on purpose: the splicer indexes character by character and the flag
+    buries real errors under `string | undefined`.
 - `main` receives code only via PRs. Every remote action — push, PR creation,
   merge — requires explicit owner approval before running.
 

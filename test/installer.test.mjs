@@ -113,7 +113,7 @@ test("the bridge is registered from the package, and no copy is left in the root
     const [entry] = configOf(m).plugin;
     assert.ok(entry.startsWith("file://"), entry);
     const file = decodeURIComponent(new URL(entry).pathname);
-    assert.equal(file, path.join(ROOT, "opencode", "doppler.ts"));
+    assert.equal(file, path.join(ROOT, "dist", "doppler.js"));
     assert.ok(fs.existsSync(file), "the registered path must exist");
     // The whole point: nothing engine-shaped survives in the user's directory.
     assert.equal(fs.existsSync(path.join(home, "opencode", "doppler.ts")), false);
@@ -175,7 +175,7 @@ test("install preserves the user's own plugins and comments", () => {
       .map((e) => JSON.parse(e));
     assert.equal(plugins.length, 2);
     assert.ok(plugins[0].includes("opencode-gemini-auth"), "the user's plugin is kept");
-    assert.match(plugins[1], /doppler\.ts$/, "doppler's entry is appended");
+    assert.match(plugins[1], /dist\/doppler\.js$/, "doppler's entry is appended");
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -321,7 +321,7 @@ test("install repairs a stale registration", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["install", "opencode"]).status, 0);
     assert.equal(configOf(m).plugin.length, 1);
-    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "opencode", "doppler.ts"));
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
     assert.equal(run(m, ["doctor"]).status, 0);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
@@ -460,7 +460,7 @@ test("update re-registers the package's own bridge, so a move is self-healing", 
     c.plugin = ["file:///moved/package/opencode/doppler.ts"];
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["update"]).status, 0);
-    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "opencode", "doppler.ts"));
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
