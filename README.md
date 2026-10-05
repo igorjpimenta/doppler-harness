@@ -102,7 +102,7 @@ export OPENCODE_BIN=/path/to/opencode
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md
-  opencode/doppler.ts             the engine, refreshed on every install
+  opencode.json                   generated: where the root is
 
 package root
   opencode/doppler.ts             the ONLY file that knows OpenCode exists
@@ -115,13 +115,17 @@ policy *formats*, and registers the bridge; everything else is yours to write.
 That is one rule with a reason: a policy you did not choose is not a policy, and
 one that is silently overwritten on update is not yours either.
 
-The one file the installer does copy is the bridge itself, into
-`~/.doppler/opencode/`. It is a copy so that the path OpenCode is given points
-at *your* directory rather than at `node_modules`, which npm owns and may
-repoint on any reinstall. A registration into npm's directory survives the move
-and silently loads nothing. This copy is rewritten on every `install` and
-`update`, so it cannot drift from the package, and `doppler doctor` says so if
-it ever does.
+**The engine has no copy.** The registration points at the bridge where the
+package is installed, and the personal root holds only your files. Uninstall the
+package and the engine goes with it — there is no second copy left behind to keep
+enforcing.
+
+That does mean the registration sits in a directory npm owns, which npm may
+repoint on any reinstall. When that happens the entry names a path with nothing
+at it, and `doppler doctor` says so: `registered path resolves` fails, and a
+warning flags that the entry is inside `node_modules`. One `doppler install
+opencode` points it back at the package. An engine file left in your root by an
+older install is removed the next time you install or update.
 
 **Nothing is enforced until you write a hook.** A fresh install registers the
 bridge, which delivers your skills, agents and permission rules, and warns once
@@ -197,8 +201,9 @@ step and no `dist/`, so there is nothing to go stale.
 The installer and the config splicer are JavaScript, and that is not a
 preference. Node refuses to strip types for files under `node_modules`, so a
 TypeScript entry point cannot be `npm install`ed at all — the documented install
-path would fail on every machine. The bridge escapes this only because it is
-copied to `~/.doppler/opencode/` and loaded from there.
+  path would fail on every machine. The bridge escapes this only because OpenCode
+  transpiles it with Bun, which has no such restriction, and it is never handed to
+  Node.
 
 ### Testing a local change
 
