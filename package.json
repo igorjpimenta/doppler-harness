@@ -1,7 +1,7 @@
 {
   "name": "@igorjpimenta/doppler-harness",
-  "version": "2026.9.29-3",
-  "description": "One config root for every coding agent — connect OpenCode with a single CLI command. No symlinks, no copies.",
+  "version": "2026.10.5",
+  "description": "One config root for every coding agent \u2014 connect OpenCode with a single CLI command. No symlinks, no copies.",
   "type": "module",
   "license": "MIT",
   "repository": {
