@@ -14,7 +14,7 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.9.29-1
+npm install -g github:igorjpimenta/doppler-harness#2026.10.5
 doppler install opencode
 ```
 
@@ -47,7 +47,7 @@ doppler install opencode      # scaffold the personal root, register the bridge,
 doppler update                # refresh the engine, re-register (and pull, under a clone install)
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.9.29-1
+doppler version               # 2026.10.5
 doppler                       # usage
 ```
 
@@ -234,7 +234,7 @@ rm -rf /tmp/scratch /tmp/scratch-home
 The `cli` line `doctor` prints is how you tell which copy you are running:
 
 ```
-ok    cli — ~/dev/doppler-harness on main — 2026.9.29-3     # the checkout
+ok    cli — ~/dev/doppler-harness on main — 2026.10.5         # the checkout
 ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.9.29-3  # a global install
 ```
 
