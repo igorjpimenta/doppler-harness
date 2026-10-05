@@ -99,6 +99,15 @@ function paths() {
   };
 }
 
+// The user's own standing instructions, at OpenCode's native global path. Its
+// existence silences the root's AGENTS.md (see the config hook). Resolved from
+// the process home per call, so a test isolates it with $HOME — os.homedir
+// honors that on POSIX — the same way the personal root isolates with
+// DOPPLER_HOME.
+function globalAgentsMd() {
+  return path.join(os.homedir(), ".config", "opencode", "AGENTS.md");
+}
+
 // The OpenCode CLI verbs that add a plugin source. Harness vocabulary, so it
 // is supplied to the hook rather than guessed inside it.
 const SOURCE_PATTERNS = ["\\bopencode\\s+plugin\\b"];
@@ -471,12 +480,14 @@ export const DopplerHarness: Plugin = async ({ client }) => {
 
         // A root AGENTS.md is the personal root's standing instructions, and it
         // is registered like the skills above — read in place, deduped against
-        // whatever the user already listed. OpenCode's only native global
-        // instructions path is under ~/.config, and a file there would be a
-        // copy of the root that outlives `doppler uninstall`, so the bridge
-        // carries the registration instead.
+        // whatever the user already listed. It is a fallback, not an override:
+        // the native global path (globalAgentsMd) is the user's own voice, and
+        // a root file that applied alongside it would leave two standing
+        // instructions with no visible precedence. So when the user has one,
+        // the root's stays dormant — the same "the user's own wins" rule as
+        // the agents below.
         const agentsMd = path.join(paths().home, "AGENTS.md");
-        if (fs.existsSync(agentsMd)) {
+        if (fs.existsSync(agentsMd) && !fs.existsSync(globalAgentsMd())) {
           const listed = Array.isArray(cfg.instructions) ? cfg.instructions : [];
           cfg.instructions = [...new Set([...listed, agentsMd])];
         }

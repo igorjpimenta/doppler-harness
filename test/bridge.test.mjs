@@ -17,8 +17,12 @@ import { DopplerHarness } from "../opencode/doppler.ts";
 // without needing something in it; hooks/, agents/ and skills/ are created when
 // a test puts something there, so "the user has no skills" is expressible.
 // Everything the bridge reads resolves from DOPPLER_HOME, so no test can reach
-// the real root.
-function rootWith({ hooks = {}, policy = {}, skills = {}, mkdir = [] } = {}) {
+// the real root. The process home is always faked too — empty unless
+// `globalAgentsMd` gives content for a fake ~/.config/opencode/AGENTS.md —
+// because the bridge reads that path from os.homedir() (which honors $HOME on
+// POSIX), and on a machine that has real global instructions every
+// registration assertion would otherwise depend on the developer's own setup.
+function rootWith({ hooks = {}, policy = {}, skills = {}, mkdir = [], globalAgentsMd = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-bridge-"));
   fs.mkdirSync(path.join(home, "policy"), { recursive: true });
   for (const d of ["hooks", "agents", "skills", ...mkdir]) {
@@ -35,19 +39,29 @@ function rootWith({ hooks = {}, policy = {}, skills = {}, mkdir = [] } = {}) {
   for (const [name, body] of Object.entries(policy)) {
     fs.writeFileSync(path.join(home, "policy", name), body);
   }
-  return home;
+  const fakeProcessHome = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-userhome-"));
+  if (globalAgentsMd !== null) {
+    fs.mkdirSync(path.join(fakeProcessHome, ".config", "opencode"), { recursive: true });
+    fs.writeFileSync(path.join(fakeProcessHome, ".config", "opencode", "AGENTS.md"), globalAgentsMd);
+  }
+  return { home, fakeProcessHome };
 }
 
 async function withRoot(spec, fn) {
-  const home = rootWith(spec);
-  const previous = process.env.DOPPLER_HOME;
+  const { home, fakeProcessHome } = rootWith(spec);
+  const previousDoppler = process.env.DOPPLER_HOME;
+  const previousHome = process.env.HOME;
   process.env.DOPPLER_HOME = home;
+  process.env.HOME = fakeProcessHome;
   try {
     return await fn(home, await DopplerHarness({}));
   } finally {
-    if (previous === undefined) delete process.env.DOPPLER_HOME;
-    else process.env.DOPPLER_HOME = previous;
+    if (previousDoppler === undefined) delete process.env.DOPPLER_HOME;
+    else process.env.DOPPLER_HOME = previousDoppler;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
     fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeProcessHome, { recursive: true, force: true });
   }
 }
 
@@ -274,6 +288,28 @@ test("a root AGENTS.md is registered as instructions only when it exists", async
     const cfg = { agent: {} };
     await plugin.config(cfg);
     assert.deepEqual(cfg.instructions, [path.join(home, "AGENTS.md")]);
+  });
+});
+
+test("the user's own global AGENTS.md outranks the root's", async () => {
+  // Two standing instructions with no visible precedence is worse than one
+  // dormant file, so the root's is not registered while the user's exists.
+  await withRoot({
+    globalAgentsMd: "# the user's own\n",
+  }, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# the root's\n");
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.equal(cfg.instructions, undefined);
+  });
+  // And the user's global alone registers nothing — OpenCode reads it
+  // natively, so the bridge has nothing to add.
+  await withRoot({
+    globalAgentsMd: "# the user's own\n",
+  }, async (_, plugin) => {
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.equal(cfg.instructions, undefined);
   });
 });
 

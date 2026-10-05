@@ -79,9 +79,10 @@ export OPENCODE_BIN=/path/to/opencode
   agents in `~/.config/opencode/agent/`.
 - **Instructions** — a root `AGENTS.md` becomes standing instructions in every
   OpenCode session, registered through the config's own `instructions` field and
-  read in place. OpenCode's only native global instructions path lives under
-  `~/.config/opencode/`, and a file there would be a copy of your root that
-  outlives `doppler uninstall`, so the bridge carries the registration instead.
+  read in place — as a fallback. Your own global instructions
+  (`~/.config/opencode/AGENTS.md`) outrank it: while that file exists, the
+  root's stays dormant, so there are never two standing instructions with no
+  visible precedence.
 - **Hooks** — *yours to write.* The bridge runs every `.mjs` in your root's
   `hooks/` on every tool call. A working example ships as
   `policy/hook.example.mjs`; nothing is enforced until you have one. See
