@@ -51,8 +51,13 @@ async function withRoot(spec, fn) {
   const { home, fakeProcessHome } = rootWith(spec);
   const previousDoppler = process.env.DOPPLER_HOME;
   const previousHome = process.env.HOME;
+  const previousXdg = process.env.XDG_CONFIG_HOME;
   process.env.DOPPLER_HOME = home;
   process.env.HOME = fakeProcessHome;
+  // The bridge resolves the global instructions path the way OpenCode does —
+  // XDG_CONFIG_HOME first — so it must point at the fake home's .config too,
+  // or a developer's real XDG setting would decide the assertions.
+  process.env.XDG_CONFIG_HOME = path.join(fakeProcessHome, ".config");
   try {
     return await fn(home, await DopplerHarness({}));
   } finally {
@@ -60,6 +65,8 @@ async function withRoot(spec, fn) {
     else process.env.DOPPLER_HOME = previousDoppler;
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(fakeProcessHome, { recursive: true, force: true });
   }
@@ -310,6 +317,31 @@ test("the user's own global AGENTS.md outranks the root's", async () => {
     const cfg = { agent: {} };
     await plugin.config(cfg);
     assert.equal(cfg.instructions, undefined);
+  });
+});
+
+test("the global instructions path follows XDG_CONFIG_HOME when set", async () => {
+  // OpenCode reads its global config from $XDG_CONFIG_HOME/opencode when the
+  // variable is set. A suppression check pinned to ~/.config would read a file
+  // OpenCode is not reading, so the bridge must follow the same resolution:
+  // a user global in the XDG dir silences the root's, one in ~/.config alone
+  // does not.
+  await withRoot({
+    globalAgentsMd: "# the user's own, via XDG\n",
+  }, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# the root's\n");
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.equal(cfg.instructions, undefined);
+  });
+  // The XDG dir is where the check looks, so a file at the legacy ~/.config
+  // path with XDG set is not the user's global as far as OpenCode is concerned
+  // — the root's registers.
+  await withRoot({}, async (home, plugin) => {
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# the root's\n");
+    const cfg = { agent: {} };
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.instructions, [path.join(home, "AGENTS.md")]);
   });
 });
 
