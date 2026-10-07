@@ -1,6 +1,6 @@
 {
   "name": "@igorjpimenta/doppler-harness",
-  "version": "2026.10.5",
+  "version": "2026.10.7",
   "description": "One config root for every coding agent \u2014 connect OpenCode with a single CLI command. No symlinks, no copies.",
   "type": "module",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "test": "node --test test/",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "prepare": "npm run build"
+    "prepare": "npm run build || (echo '[doppler] no tsc on PATH — fetching typescript, transpiling (type diagnostics expected)' && npx --yes -p typescript@5.9 tsc; node -e \"const{pathToFileURL}=require('url');import(pathToFileURL('dist/doppler.js'))\")"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.33",
