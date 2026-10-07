@@ -196,7 +196,7 @@ copied — never edit there. Conventions: Angular commits with scopes; CalVer
 `main` receives code only via PRs.
 
 ```
-npm test         # 66 tests: the splicer, agent parsing, bridge, installer
+npm test         # 76 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 
