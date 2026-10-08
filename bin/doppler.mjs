@@ -71,6 +71,38 @@ try {
 const BRIDGE = path.join(PKG, "dist", "doppler.js");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
+// The bridge's declared id (opencode/doppler.ts exports it as a PluginModule).
+// OpenCode loads every registered plugin and does not dedup by id, so "doppler
+// is the secondary option" is this installer's check, not the harness's: before
+// registering, load each existing plugin and read its id. A same-id plugin
+// that is not the bridge itself means the user wrote a replacement and theirs
+// is the primary — the bridge stays dormant. A plugin that cannot be loaded is
+// not a match: fail open and register anyway, because an unreadable plugin must
+// not block the install.
+const BRIDGE_ID = "doppler";
+async function hasSameIdPlugin() {
+  const p = ocConfigPath();
+  const cfg = readConfig(p);
+  const span = topLevelValueSpan(cfg, "plugin");
+  if (!span) return false;
+  for (const e of stringElements(cfg, span)) {
+    try {
+      const spec = JSON.parse(e);
+      const url = Array.isArray(spec) ? spec[0] : spec;
+      if (typeof url !== "string" || !url.startsWith("file://")) continue;
+      // The bridge's own entry, at any path: registering clears a stale one and
+      // refreshes a current one, so it is never the "user wrote a replacement"
+      // case — only a same-id plugin at a path that is not the bridge's is.
+      if (isDoppler(e)) continue;
+      const mod = await import(url);
+      if (mod.default?.id === BRIDGE_ID) return true;
+    } catch {
+      // unreadable plugin: not a match, keep going
+    }
+  }
+  return false;
+}
+
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
 
 function packageJson() {
@@ -235,11 +267,15 @@ function verify() {
   }
 }
 
-function installOpencode() {
+async function installOpencode() {
   console.log(`personal root: ${scaffold()} (${HOME})`);
   const stale = removeStaleBridgeCopies();
   if (stale) console.log(`removed ${stale} stale engine cop${stale === 1 ? "y" : "ies"} from the personal root`);
   writeRootManifest();
+  if (await hasSameIdPlugin()) {
+    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.`);
+    return;
+  }
   const r = register();
   console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${entry()}`);
   verify();
@@ -252,15 +288,19 @@ function uninstallOpencode() {
   console.log(`delete ${HOME} to remove the personal root entirely.`);
 }
 
-function update() {
+async function update() {
   if (fs.existsSync(path.join(HOME, ".git"))) sh(`git -C ${HOME} pull --ff-only`);
   else console.log(`${HOME} is not a git clone — nothing to pull (npm delivery model).`);
   writeRootManifest();
   // The engine is read from the package, so there is nothing to refresh and
   // nothing to re-sync: the registered path and the file behind it cannot
   // disagree, because they are the same file. Re-registering only picks up a
-  // package that has moved.
+  // package that has moved — unless a same-id plugin already holds the slot.
   removeStaleBridgeCopies();
+  if (await hasSameIdPlugin()) {
+    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.`);
+    return;
+  }
   register();
   console.log(`updated to ${packageJson().version}`);
   console.log("restart opencode to pick it up.");
@@ -466,9 +506,9 @@ function doctor() {
 const cmd = process.argv[2] ?? "help";
 const target = process.argv[3];
 const USAGE = "usage: doppler <install|uninstall> opencode | update | doctor | version";
-if (cmd === "install" && target === "opencode") installOpencode();
+if (cmd === "install" && target === "opencode") await installOpencode();
 else if (cmd === "uninstall" && target === "opencode") uninstallOpencode();
-else if (cmd === "update") update();
+else if (cmd === "update") await update();
 else if (cmd === "doctor") doctor();
 else if (cmd === "version") console.log(packageJson().version);
 else {
