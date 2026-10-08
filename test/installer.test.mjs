@@ -180,6 +180,31 @@ test("a plugin with the bridge's id already registered stays primary", () => {
   }
 });
 
+test("a same-id replacement removes an already-registered bridge", () => {
+  // The bridge was installed first; the user then adds their own same-id
+  // plugin. Re-running install must not leave both — two same-id plugins
+  // injecting config with no visible precedence is the failure this prevents.
+  const m = machine();
+  const cfg = path.join(m.cfgDir, "opencode.json");
+  try {
+    run(m, ["install", "opencode"]);
+    assert.equal(configOf(m).plugin.length, 1, "the bridge is registered first");
+    const plugin = path.join(m.home, "my-own-doppler.js");
+    fs.writeFileSync(plugin, 'export default { id: "doppler", server: async () => ({}) };\n');
+    const c = configOf(m);
+    c.plugin.unshift(pathToFileURL(plugin).href);
+    fs.writeFileSync(cfg, JSON.stringify(c));
+    const r = run(m, ["install", "opencode"]);
+    assert.equal(r.status, 0, out(r));
+    const after = configOf(m);
+    assert.equal(after.plugin.length, 1, "the bridge is removed, not kept alongside");
+    assert.ok(after.plugin[0].includes("my-own-doppler.js"), "the user's plugin is kept");
+    assert.match(out(r), /removed the previous bridge entry/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("the bridge's own stale entry is still refreshed, not treated as a replacement", () => {
   // A bridge entry at an old path (the package moved) has the same id but is
   // not a user's replacement — registering clears the stale path and writes
