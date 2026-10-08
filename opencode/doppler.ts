@@ -99,6 +99,18 @@ function paths() {
   };
 }
 
+// The user's own standing instructions, at OpenCode's native global path. Its
+// existence silences the root's AGENTS.md (see the config hook). The directory
+// resolves the way OpenCode itself resolves its global config — XDG_CONFIG_HOME
+// when set, else the process home — because a check pinned to ~/.config would
+// read a file OpenCode is not reading on an XDG setup. Resolved per call, so a
+// test isolates it with $HOME and XDG_CONFIG_HOME the same way the personal
+// root isolates with DOPPLER_HOME.
+function globalAgentsMd() {
+  const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(configHome, "opencode", "AGENTS.md");
+}
+
 // The OpenCode CLI verbs that add a plugin source. Harness vocabulary, so it
 // is supplied to the hook rather than guessed inside it.
 const SOURCE_PATTERNS = ["\\bopencode\\s+plugin\\b"];
@@ -469,6 +481,20 @@ export const DopplerHarness: Plugin = async ({ client }) => {
           for (const [tool, rule] of Object.entries(permission)) mergePermission(cfg, tool, rule);
         }
 
+        // A root AGENTS.md is the personal root's standing instructions, and it
+        // is registered like the skills above — read in place, deduped against
+        // whatever the user already listed. It is a fallback, not an override:
+        // the native global path (globalAgentsMd) is the user's own voice, and
+        // a root file that applied alongside it would leave two standing
+        // instructions with no visible precedence. So when the user has one,
+        // the root's stays dormant — the same "the user's own wins" rule as
+        // the agents below.
+        const agentsMd = path.join(paths().home, "AGENTS.md");
+        if (fs.existsSync(agentsMd) && !fs.existsSync(globalAgentsMd())) {
+          const listed = Array.isArray(cfg.instructions) ? cfg.instructions : [];
+          cfg.instructions = [...new Set([...listed, agentsMd])];
+        }
+
         for (const agent of readAgents()) {
           cfg.agent = cfg.agent && typeof cfg.agent === "object" ? cfg.agent : {};
           if (cfg.agent[agent.name]) continue; // the user's own agent wins
@@ -500,4 +526,10 @@ export const DopplerHarness: Plugin = async ({ client }) => {
   };
 };
 
-export default DopplerHarness;
+// The bridge declares its id so the installer can tell it from a plugin the
+// user wrote to replace it: OpenCode loads every registered plugin and does not
+// dedup by id, so "doppler is the secondary option" is doppler's own check, not
+// the harness's. A same-id plugin already registered means the user's is the
+// primary and this bridge stays dormant. The id is a stable contract — the
+// installer matches on it, and a user replacing doppler names theirs the same.
+export default { id: "doppler", server: DopplerHarness };

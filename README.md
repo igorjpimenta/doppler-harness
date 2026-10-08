@@ -14,7 +14,7 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.10.7
+npm install -g github:igorjpimenta/doppler-harness#2026.10.8
 doppler install opencode
 ```
 
@@ -47,7 +47,7 @@ doppler install opencode      # scaffold the personal root, register the bridge,
 doppler update                # refresh the engine, re-register (and pull, under a clone install)
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.10.7
+doppler version               # 2026.10.8
 doppler                       # usage
 ```
 
@@ -77,6 +77,12 @@ export OPENCODE_BIN=/path/to/opencode
   `doppler-<name>` subagents. Namespaced so a personal agent can never shadow a
   built-in (`build`, `plan`, `explore`, `general`) or collide with your own
   agents in `~/.config/opencode/agent/`.
+- **Instructions** — a root `AGENTS.md` becomes standing instructions in every
+  OpenCode session, registered through the config's own `instructions` field and
+  read in place — as a fallback. Your own global instructions
+  (`$XDG_CONFIG_HOME/opencode/AGENTS.md` or the default-home equivalent)
+  outrank it: while that file exists, the root's stays dormant, so there are
+  never two standing instructions with no visible precedence.
 - **Hooks** — *yours to write.* The bridge runs every `.mjs` in your root's
   `hooks/` on every tool call. A working example ships as
   `policy/hook.example.mjs`; nothing is enforced until you have one. See
@@ -101,7 +107,7 @@ export OPENCODE_BIN=/path/to/opencode
   policy/allowlist.json           permission rules, as data
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
-  agents/*.md   skills/<n>/SKILL.md
+  agents/*.md   skills/<n>/SKILL.md   AGENTS.md
   opencode.json                   generated: where the root is
 
 package root
@@ -190,7 +196,7 @@ copied — never edit there. Conventions: Angular commits with scopes; CalVer
 `main` receives code only via PRs.
 
 ```
-npm test         # 64 tests: the splicer, agent parsing, bridge, installer
+npm test         # 76 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 ```
 

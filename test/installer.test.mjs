@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
@@ -149,6 +149,98 @@ test("install is idempotent and never duplicates the entry", () => {
     run(m, ["install", "opencode"]);
     run(m, ["install", "opencode"]);
     assert.equal(configOf(m).plugin.length, 1);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("a plugin with the bridge's id already registered stays primary", () => {
+  // OpenCode loads every registered plugin and does not dedup by id, so
+  // "doppler is the secondary option" is the installer's check: a same-id
+  // plugin that is not the bridge itself means the user wrote a replacement,
+  // and registering the bridge alongside it would leave two plugins injecting
+  // config with no visible precedence.
+  const m = machine();
+  const cfg = path.join(m.cfgDir, "opencode.json");
+  const plugin = path.join(m.home, "my-own-doppler.js");
+  fs.writeFileSync(plugin, 'export default { id: "doppler", server: async () => ({}) };\n');
+  fs.writeFileSync(cfg, JSON.stringify({
+    "$schema": "https://opencode.ai/config.json",
+    "plugin": [pathToFileURL(plugin).href],
+  }));
+  try {
+    const r = run(m, ["install", "opencode"]);
+    assert.equal(r.status, 0, out(r));
+    const c = configOf(m);
+    assert.equal(c.plugin.length, 1, "the bridge must not be added");
+    assert.ok(c.plugin[0].includes("my-own-doppler.js"), "the user's plugin is kept");
+    assert.match(out(r), /stays dormant/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("a same-id replacement removes an already-registered bridge", () => {
+  // The bridge was installed first; the user then adds their own same-id
+  // plugin. Re-running install must not leave both — two same-id plugins
+  // injecting config with no visible precedence is the failure this prevents.
+  const m = machine();
+  const cfg = path.join(m.cfgDir, "opencode.json");
+  try {
+    run(m, ["install", "opencode"]);
+    assert.equal(configOf(m).plugin.length, 1, "the bridge is registered first");
+    const plugin = path.join(m.home, "my-own-doppler.js");
+    fs.writeFileSync(plugin, 'export default { id: "doppler", server: async () => ({}) };\n');
+    const c = configOf(m);
+    c.plugin.unshift(pathToFileURL(plugin).href);
+    fs.writeFileSync(cfg, JSON.stringify(c));
+    const r = run(m, ["install", "opencode"]);
+    assert.equal(r.status, 0, out(r));
+    const after = configOf(m);
+    assert.equal(after.plugin.length, 1, "the bridge is removed, not kept alongside");
+    assert.ok(after.plugin[0].includes("my-own-doppler.js"), "the user's plugin is kept");
+    assert.match(out(r), /removed the previous bridge entry/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("the bridge's own stale entry is still refreshed, not treated as a replacement", () => {
+  // A bridge entry at an old path (the package moved) has the same id but is
+  // not a user's replacement — registering clears the stale path and writes
+  // the current one. The id check must not skip that.
+  const m = machine();
+  const cfg = path.join(m.cfgDir, "opencode.json");
+  fs.writeFileSync(cfg, JSON.stringify({
+    "$schema": "https://opencode.ai/config.json",
+    "plugin": ["file:///old/node_modules/@igorjpimenta/doppler-harness/dist/doppler.js"],
+  }));
+  try {
+    const r = run(m, ["install", "opencode"]);
+    assert.equal(r.status, 0, out(r));
+    const c = configOf(m);
+    assert.equal(c.plugin.length, 1, "the stale entry is replaced, not kept");
+    assert.match(c.plugin[0], /dist\/doppler\.js$/, "the current bridge is registered");
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable plugin does not block registration", () => {
+  // A plugin that cannot be loaded is not a same-id match: failing closed
+  // would let one broken entry stop the install for everyone.
+  const m = machine();
+  const cfg = path.join(m.cfgDir, "opencode.json");
+  fs.writeFileSync(cfg, JSON.stringify({
+    "$schema": "https://opencode.ai/config.json",
+    "plugin": ["file:///nonexistent/plugin.js"],
+  }));
+  try {
+    const r = run(m, ["install", "opencode"]);
+    assert.equal(r.status, 0, out(r));
+    const c = configOf(m);
+    assert.equal(c.plugin.length, 2, "the bridge is registered despite the broken plugin");
+    assert.match(c.plugin[1], /dist\/doppler\.js$/, "doppler's entry is appended");
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
