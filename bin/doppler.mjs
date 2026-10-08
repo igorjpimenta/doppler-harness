@@ -271,9 +271,14 @@ async function installOpencode() {
   console.log(`personal root: ${scaffold()} (${HOME})`);
   const stale = removeStaleBridgeCopies();
   if (stale) console.log(`removed ${stale} stale engine cop${stale === 1 ? "y" : "ies"} from the personal root`);
-  writeRootManifest();
+    writeRootManifest();
   if (await hasSameIdPlugin()) {
-    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.`);
+    // Not just "don't add" — a bridge already registered must be removed, or
+    // two same-id plugins both inject config with no visible precedence. The
+    // user's is the primary; doppler steps aside. Re-running install without
+    // the replacement registers the bridge again.
+    const r = unregister();
+    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.${r.changed ? " (removed the previous bridge entry)" : ""}`);
     return;
   }
   const r = register();
@@ -298,7 +303,8 @@ async function update() {
   // package that has moved — unless a same-id plugin already holds the slot.
   removeStaleBridgeCopies();
   if (await hasSameIdPlugin()) {
-    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.`);
+    const r = unregister();
+    console.log(`a plugin with id '${BRIDGE_ID}' is already registered — doppler's bridge stays dormant.${r.changed ? " (removed the previous bridge entry)" : ""}`);
     return;
   }
   register();
