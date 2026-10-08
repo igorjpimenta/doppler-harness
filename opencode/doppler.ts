@@ -526,4 +526,10 @@ export const DopplerHarness: Plugin = async ({ client }) => {
   };
 };
 
-export default DopplerHarness;
+// The bridge declares its id so the installer can tell it from a plugin the
+// user wrote to replace it: OpenCode loads every registered plugin and does not
+// dedup by id, so "doppler is the secondary option" is doppler's own check, not
+// the harness's. A same-id plugin already registered means the user's is the
+// primary and this bridge stays dormant. The id is a stable contract — the
+// installer matches on it, and a user replacing doppler names theirs the same.
+export default { id: "doppler", server: DopplerHarness };
