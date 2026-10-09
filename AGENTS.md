@@ -4,13 +4,15 @@ One canonical config root serving many harnesses (OpenCode live) via native
 mechanisms only — no symlinks, no maintained copies *of the config root*. The
 package ships **no content**: the policy, the agents, the skills and the
 permission rules all live in the personal root and are read in place, so
-editing any of them takes effect on the next harness start with no re-install.
+editing any of them takes effect in the running harness, with no re-install and
+no restart.
 
 ## Commands
 
 ```
 node bin/doppler.mjs install opencode     # scaffold personal root → register the bridge → verify
 node bin/doppler.mjs update                # refresh the engine, re-register
+node bin/doppler.mjs reload                # ask a running harness to re-read the root
 node bin/doppler.mjs doctor                # is any of it actually working?
 node bin/doppler.mjs uninstall opencode   # remove the bridge entry (personal root left alone)
 node bin/doppler.mjs version
@@ -96,6 +98,40 @@ bug in the engine cannot wedge every tool call. A non-zero exit is
 indistinguishable from a hook that is not installed, so the bridge warns at
 startup when it finds no hooks at all.
 
+### Live refresh
+
+Hook bodies are exec'd per tool call, so they were always live. Everything else
+the bridge delivers goes through the `config` hook, which OpenCode calls once per
+instance and snapshots — so editing it used to mean a restart, which is the one
+thing a live config root cannot ask of you.
+
+The bridge therefore keeps a fingerprint of exactly the files that hook reads
+(policy, agents, skills, the overlay roots, the instruction registration, and
+hook *declarations* — not hook bodies, which are already live). A recursive
+`fs.watch` on each of those roots asks for a comparison when something moves,
+and the fingerprint decides what counts — so the event is a reason to look now
+and never the reason a change applies. That split is measured, not assumed: Bun
+1.3.14 delivers a watch event in ~11ms and coalesces hard (60 atomic saves in
+9ms produced none, twice in three runs), while at editing cadence it delivered
+all 30 of 30 across six runs. A design that trusted the event would have shipped
+a policy that silently stopped applying after an editor's autosave. A 30s
+comparison runs alongside as the backstop, which is also the whole mechanism
+where a recursive watch is unavailable.
+
+Every way a change can be held — the startup grace, the quiet window, a turn in
+flight — schedules its own wake-up for the moment it expires. Without that, a
+change arriving inside a window had nothing to release it and waited for the
+backstop; measuring the real server turned up a 30s wait after a reload, which is
+now pinned by a test.
+
+The flush waits for an idle boundary, because a rebuild disposes the instance
+and a dispose mid-turn kills the turn — a worse outcome than one stale rule.
+`doppler reload` is the manual form of the same request, as a file in the root
+rather than a call, because an external process cannot authenticate to a
+desktop-app server and writing a credential to disk to work around that is a
+worse trade. `DOPPLER_RELOAD=off` turns the automatic half off and leaves the
+manual half working.
+
 ## OpenCode facts this design depends on
 
 Prefer a native mechanism over a hook wherever one exists. Re-verify these
@@ -120,6 +156,32 @@ were checked by running rather than by reading.
 - The global config may be `opencode.json` **or** `opencode.jsonc`; both are
   read. Config is validated strictly — an unknown top-level key is a startup
   error, not a warning.
+- Everything a `config` hook injects is snapshotted **once per instance**.
+  `Config.state`, `Agent.state` and `Skill.state` are `InstanceState` caches
+  keyed by directory, built on first touch; the hook itself is called once, when
+  the plugin state is built. `Config.invalidate()` does not help — it clears the
+  global *file* read cache, not the instance snapshot. So a running session
+  cannot see an edit to a policy, agent, skill or instruction registration.
+- **`POST /instance/dispose?directory=<dir>` is the refresh point.** It runs
+  every registered disposer, which invalidates those caches, and the next
+  request rebuilds them — config re-read from disk, the `config` hook re-run
+  against it — in the same process. OpenCode does this to itself on
+  `PATCH /config` and on `PATCH /global/config` when the write differs, and its
+  TUI handles the resulting `server.instance.disposed` event by re-bootstrapping
+  (`packages/tui/src/context/sync.tsx`), so it is a refresh the harness already
+  survives. Verified against v1.18.32 by delivery: a pattern added to
+  `allowlist.json` is absent from `GET /config` and present after a dispose.
+  Costs: the instance's LSP and MCP restart, and in-memory "always allow"
+  answers are dropped — so the bridge waits for an idle boundary.
+- A desktop-app (and any password-set) server requires auth on that route.
+  `PluginInput.serverUrl` plus `OPENCODE_SERVER_PASSWORD` /
+  `OPENCODE_SERVER_USERNAME` are what the harness's own SDK client is built with,
+  and are what the bridge reuses.
+- A plugin **module** is cached by Bun for the life of the process
+  (`PluginLoader.load` does a bare `import()` of the resolved entry, and its own
+  comment notes Bun caches module resolution). A reload re-runs the factory
+  function but does not re-read the file, so a change to the bridge itself needs
+  a process restart. Everything the bridge *delivers* is unaffected by that.
 
 ## Conventions
 
