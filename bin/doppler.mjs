@@ -10,8 +10,10 @@
 //             and is the only file that knows OpenCode exists; it injects the
 //             personal root's skills, agents and compiled permissions, and
 //             execs the personal root's hooks on every tool call. Editing a
-//             hook takes effect on the next opencode start — nothing to
-//             re-install, because nothing was ever copied.
+//             hook is live on the next tool call; editing a policy, agent or
+//             skill makes the bridge ask OpenCode to rebuild the session's
+//             config at the next idle moment. Nothing to re-install, because
+//             nothing was ever copied.
 //
 // The engine lives in the package and nowhere else. Uninstalling the package
 // therefore stops everything it did: there is no second copy of the bridge
@@ -21,6 +23,7 @@
 //   doppler install opencode
 //   node ~/.doppler/bin/doppler.mjs install opencode
 //   doppler update                # pull the personal root, then re-register
+//   doppler reload                # ask a running opencode to re-read the root
 //   doppler uninstall opencode
 //   doppler version
 import fs from "node:fs";
@@ -104,6 +107,10 @@ async function hasSameIdPlugin() {
 }
 
 const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
+
+// The file the bridge watches for a manual reload request. Read as a counter
+// rather than a mtime so two requests in the same filesystem tick are still two.
+const RELOAD_SENTINEL = path.join(HOME, ".reload");
 
 function packageJson() {
   return JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf8"));
@@ -259,7 +266,8 @@ function verify() {
   try {
     sh(`${oc} debug config`);
     console.log(`bridge registered in ${ocConfigPath()} — config parses, hooks are live.`);
-    console.log("restart opencode (config is read once at startup).");
+    console.log("restart opencode once, to load the bridge it has just registered.");
+    console.log("after that, editing your hooks, policy, agents or skills needs no restart.");
   } catch (e) {
     console.warn(`${ocConfigPath()} did not parse: ${String(e.message).split("\n")[0]}`);
     console.warn("  OpenCode will ignore it, so no doppler hooks will run. Fix the file, then re-run.");
@@ -286,6 +294,29 @@ async function installOpencode() {
   verify();
 }
 
+// Asks every running OpenCode to rebuild its config from the personal root.
+//
+// It cannot call the harness directly: a desktop-app session always starts the
+// server with a password, and the only credential available to a separate
+// process would have to be written to disk to be usable. So the request is a file
+// in the personal root and the bridge does the calling — which means touching it
+// by hand does exactly the same thing, and nothing here is privileged.
+function reload() {
+  fs.mkdirSync(HOME, { recursive: true });
+  let previous = 0;
+  try {
+    previous = Number(fs.readFileSync(RELOAD_SENTINEL, "utf8")) || 0;
+  } catch {
+    // no previous request
+  }
+  fs.writeFileSync(RELOAD_SENTINEL, `${previous + 1}\n`);
+  console.log(`reload requested: ${RELOAD_SENTINEL}`);
+  console.log("a running opencode applies it at its next idle moment — a turn in flight is never interrupted.");
+  if (!fs.existsSync(BRIDGE)) {
+    console.log(`note: no bridge at ${BRIDGE}, so nothing is registered to answer. Run doppler install opencode.`);
+  }
+}
+
 function uninstallOpencode() {
   const r = unregister();
   console.log(`${r.changed ? "removed" : "not present"}: doppler bridge entry in ${r.path}`);
@@ -309,7 +340,8 @@ async function update() {
   }
   register();
   console.log(`updated to ${packageJson().version}`);
-  console.log("restart opencode to pick it up.");
+  console.log("restart opencode to pick up the new engine code.");
+  console.log("your own files do not need it — the bridge re-reads those on its own.");
 }
 
 // --- doctor ------------------------------------------------------------------
@@ -500,6 +532,19 @@ function doctor() {
     }
   }
 
+  // Auto-reload is a behaviour, and a wrong one is invisible: a policy that reads
+  // as applied while the session is still enforcing the previous version of it.
+  // So which way it is set is a line here rather than something to discover.
+  const reloadOff = ["off", "0", "false", "no"].includes((process.env.DOPPLER_RELOAD ?? "").trim().toLowerCase());
+  if (reloadOff) {
+    warn(
+      "live refresh",
+      "DOPPLER_RELOAD is off, so policy, agent and skill edits need opencode restarted — `doppler reload` still works",
+    );
+  } else {
+    ok("live refresh", "policy, agent and skill edits apply without restarting opencode");
+  }
+
   console.log();
   if (broken) {
     console.log(`${broken} problem${broken === 1 ? "" : "s"} found. Nothing is being enforced until they are fixed.`);
@@ -511,10 +556,11 @@ function doctor() {
 
 const cmd = process.argv[2] ?? "help";
 const target = process.argv[3];
-const USAGE = "usage: doppler <install|uninstall> opencode | update | doctor | version";
+const USAGE = "usage: doppler <install|uninstall> opencode | update | reload | doctor | version";
 if (cmd === "install" && target === "opencode") await installOpencode();
 else if (cmd === "uninstall" && target === "opencode") uninstallOpencode();
 else if (cmd === "update") await update();
+else if (cmd === "reload") reload();
 else if (cmd === "doctor") doctor();
 else if (cmd === "version") console.log(packageJson().version);
 else {

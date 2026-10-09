@@ -18,7 +18,10 @@ npm install -g github:igorjpimenta/doppler-harness#2026.10.8
 doppler install opencode
 ```
 
-Restart OpenCode, then write your first hook — nothing is enforced until you do.
+Restart OpenCode once — that loads the bridge — then write your first hook.
+Nothing is enforced until you do. After that first load you never restart it
+again to change anything: edit a hook and it applies to the next tool call, edit
+a policy, agent or skill and it applies at the session's next idle moment.
 
 The package is not on the npm registry yet, so install it from git. Pin the tag
 or a commit; `main` will move. `install.sh` is the same thing as a plain clone:
@@ -45,6 +48,7 @@ silent at runtime; doctor is where they are not.
 ```
 doppler install opencode      # scaffold the personal root, register the bridge, verify
 doppler update                # refresh the engine, re-register (and pull, under a clone install)
+doppler reload                # ask a running OpenCode to re-read the personal root now
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
 doppler version               # 2026.10.8
@@ -166,8 +170,31 @@ whether it found any hooks at all.
 
 ## FAQ
 
-**Does it need a restart?** Yes. OpenCode reads its config once at startup, so
-a new hook, agent or skill needs a restart to bind. Nothing else does.
+**Does it need a restart?** Once, for the first install — OpenCode loads the
+plugin list at startup. After that, no. A hook body is exec'd on every tool call,
+so an edit applies immediately. Everything else the bridge delivers — your
+permission policy, agents, skills and standing instructions — OpenCode reads once
+and snapshots, so the bridge watches the personal root and asks OpenCode to
+rebuild the session's config when that changes. Measured end to end at roughly
+**a fifth of a second** after you stop typing.
+
+It does that at the next idle moment, so a turn in flight is never interrupted.
+The watch is only the trigger: the bridge still compares what is on disk against
+what the session actually loaded, because a filesystem event can be coalesced
+away entirely and a policy that reads as applied while the session enforces the
+previous version is the one failure nobody can see.
+
+Each rebuild restarts the session's LSP and MCP servers and forgets the "always
+allow" answers you gave in it, which is the price of not restarting. OpenCode
+takes a few seconds to bring the instance back up after a dispose, so an edit
+made in the instant after one waits for that. Set `DOPPLER_RELOAD=off` to turn
+automatic reloading off — `doctor` reports which way it is set — and
+`doppler reload` still works, as does touching `~/.doppler/.reload`.
+
+The one thing that does still need a restart is a change to doppler's own code,
+which is why `doppler update` says so: Bun caches a plugin module for the life of
+the process, so a new bridge behind the same path is not picked up until the
+harness restarts.
 
 **How do I change the policy?** Edit `~/.doppler/policy/allowlist.json` for
 permission rules, or add a `.mjs` to `~/.doppler/hooks/` for anything else. Both
@@ -185,8 +212,10 @@ engine and prompt you for real.
 and tells you what it left alone. Your `hooks/` and `policy/` directories are
 your files and are not touched; delete `~/.doppler` to remove everything.
 
-**Is anything sent anywhere?** No. There is no network call in the installer or
-the bridge.
+**Is anything sent anywhere?** No. Nothing leaves the machine. The bridge makes
+exactly one network call, to OpenCode's own server on loopback, to ask it to
+reload its config — the credentials are the ones OpenCode already gave the
+plugin, and nothing is sent anywhere else.
 
 ## Development
 

@@ -6,11 +6,12 @@
 // Run with `node --test test/`.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DopplerHarness } from "../opencode/doppler.ts";
+import { DopplerHarness, internals } from "../opencode/doppler.ts";
 
 // A personal root holding exactly the hooks and policy a test names. Only
 // `policy/` is pre-created, because that is the one directory the bridge reads
@@ -455,4 +456,362 @@ test("an example hook's declaration is not read", async () => {
       assert.equal(cfg.permission, undefined);
     },
   );
+});
+
+// --- live refresh ------------------------------------------------------------
+//
+// OpenCode reads everything the config hook delivers once per instance and
+// snapshots it, so an edit to a policy, an agent or a skill is invisible to a
+// running session until the instance is rebuilt. The bridge watches for exactly
+// that and asks for the rebuild. Three things about it are silent when they
+// break, so they are pinned here: which edits count (an edit that is missed
+// leaves a policy reading as applied and not being), which do not (an edit that
+// counts costs the user a session restart for nothing), and that a turn in
+// flight is never interrupted (a dispose mid-turn kills the turn).
+
+// A stand-in for the harness's own server, recording the rebuild requests the
+// bridge makes. Any URL would do for the reachability tests; this one also lets a
+// request be refused, which is the case that must be reported rather than retried
+// forever.
+async function sink({ reachable = true } = {}) {
+  const calls = [];
+  const server = http.createServer((req, res) => {
+    calls.push({ method: req.method, url: req.url });
+    res.writeHead(reachable ? 200 : 503, { "content-type": "application/json" });
+    res.end("true");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    url: `http://127.0.0.1:${port}`,
+    calls,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+const reported = (lines) => lines.filter((l) => l.includes("could not reach OpenCode to reload")).length;
+
+// The backstop is parked at 10s everywhere below, so anything asserted to
+// happen faster than that can only have been the watcher.
+const FAST = { backstopMs: 10_000, debounceMs: 15, quietMs: 15, graceMs: 0 };
+
+// Every timing below is a real race between a filesystem event, a debounce and a
+// timer, so nothing here waits a fixed span and hopes. It waits for the outcome
+// and fails on a deadline, which is what a flaky assertion about latency always
+// wanted to say.
+//
+// The default deadline is generous because these run concurrently — forty of
+// them, each with watchers, sockets and spawned hooks — and the machine being
+// busy is not a property of the design. Every assertion that actually has an
+// opinion about time passes its own tighter bound.
+async function waitFor(what, predicate, timeout = 8000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    if (predicate()) return Date.now() - t0;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`timed out after ${timeout}ms waiting for ${what}`);
+}
+
+// Assert something does NOT happen, which needs the deadline rather than a
+// guess at how long "not yet" is.
+const quiet = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// A burst like an editor's, and the shape that matters: write-then-rename, so
+// the file the watcher was told about is replaced rather than modified.
+function atomicSaves(target, body, times = 40) {
+  for (let i = 0; i < times; i += 1) {
+    fs.writeFileSync(`${target}.tmp`, body(i));
+    fs.renameSync(`${target}.tmp`, target);
+  }
+}
+
+test("what counts as a change is the config snapshot, not the files", async () => {
+  // The one that does not count is the important one. Hook bodies are exec'd on
+  // every tool call, so they have always been live; reloading for one would make
+  // the most common edit in the root the most expensive one.
+  await withRoot({ hooks: { "a.mjs": hook("deny") }, policy: { "allowlist.json": "{}" } }, async (home) => {
+    const before = internals.rootSnapshot();
+
+    fs.writeFileSync(path.join(home, "hooks", "a.mjs"), hook("deny") + "\n// edited\n");
+    assert.equal(internals.rootSnapshot(), before, "a hook body is already live");
+
+    fs.writeFileSync(path.join(home, "hooks", "a.ask.json"), JSON.stringify({ ask: ["*x*"] }));
+    assert.notEqual(internals.rootSnapshot(), before, "a declaration compiles into the permission map");
+
+    fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[]}');
+    assert.notEqual(internals.rootSnapshot(), before, "permission policy");
+
+    fs.writeFileSync(path.join(home, "agents", "new.md"), "---\n---\nx\n");
+    assert.notEqual(internals.rootSnapshot(), before, "agents");
+
+    fs.mkdirSync(path.join(home, "skills", "late"), { recursive: true });
+    fs.writeFileSync(path.join(home, "skills", "late", "SKILL.md"), "---\nname: late\ndescription: d\n---\n");
+    assert.notEqual(internals.rootSnapshot(), before, "skills");
+
+    fs.writeFileSync(path.join(home, "AGENTS.md"), "# standing\n");
+    assert.notEqual(internals.rootSnapshot(), before, "the instructions registration");
+
+    fs.writeFileSync(path.join(home, "overlay.json"), JSON.stringify({ skillsRoots: [] }));
+    assert.notEqual(internals.rootSnapshot(), before, "the overlay roots");
+  });
+});
+
+test("an overlay skill root is watched even before it exists", async () => {
+  // Created after the session started is the case that matters: a root that is
+  // only watched once it resolves would never fire for the edit that made it.
+  await withRoot({}, async (home) => {
+    const root = path.join(home, "skills", "shared");
+    fs.writeFileSync(path.join(home, "overlay.json"), JSON.stringify({ skillsRoots: [root] }));
+    const before = internals.rootSnapshot();
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, "SKILL.md"), "---\nname: s\ndescription: d\n---\n");
+    assert.notEqual(internals.rootSnapshot(), before);
+  });
+});
+
+test("a policy edit asks the harness to rebuild, and only once", async () => {
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      assert.equal(server.calls.length, 0, "nothing changed yet");
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"x"}]}');
+      await waitFor("the reload request", () => server.calls.length > 0);
+      assert.equal(server.calls[0].method, "POST");
+      assert.match(server.calls[0].url, /\/instance\/dispose\?directory=/);
+      // A rebuild that does not tear the watcher down must not become a request
+      // every time something pokes it.
+      await quiet(200);
+      assert.equal(server.calls.length, 1, "the same change is not re-sent");
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a turn in flight is never interrupted by a reload", async () => {
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      refresh.activity();
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"x"}]}');
+      await quiet(300);
+      assert.equal(server.calls.length, 0, "disposing mid-turn would kill the turn");
+
+      refresh.idle();
+      await waitFor("the reload at the idle moment", () => server.calls.length > 0);
+      assert.equal(server.calls.length, 1);
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("the manual sentinel reloads even with automatic reloading off", async () => {
+  // The escape hatch has to work in the mode that exists to turn automatic
+  // reloading off, or it is not an escape hatch.
+  const server = await sink();
+  const previous = process.env.DOPPLER_RELOAD;
+  process.env.DOPPLER_RELOAD = "off";
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"x"}]}');
+      await quiet(300);
+      assert.equal(server.calls.length, 0, "automatic reloading is off");
+
+      fs.writeFileSync(path.join(home, ".reload"), "1\n");
+      await waitFor("the manual request", () => server.calls.length > 0);
+      assert.equal(server.calls.length, 1, "`doppler reload` still asks");
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+  if (previous === undefined) delete process.env.DOPPLER_RELOAD;
+  else process.env.DOPPLER_RELOAD = previous;
+});
+
+// Timed against the backstop rather than the wall clock, and given a deadline
+// that survives forty concurrent tests: the claim is that the event drove it,
+// and the backstop being parked at 10s is what makes that provable. A 4s
+// deadline asserted a latency the machine was busy delivering, not a property of
+// the design — two runs in six failed here on an otherwise green suite.
+test("an edit is picked up from the watcher, not the backstop", { concurrency: false }, async () => {
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"watched"}]}');
+      const took = await waitFor("a watcher-driven reload", () => server.calls.length > 0, 8000);
+      assert.equal(server.calls.length, 1);
+      assert.ok(took < FAST.backstopMs / 2, `took ${took}ms — the backstop cannot have been it`);
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a burst reloads once, for the final state", async () => {
+  // A watcher coalesces, so forty saves must cost one reload — and the one that
+  // matters is the state that survived, not the first write of the burst.
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      // The last write is the one that reads, which is the whole point: the burst
+      // is not forty edits, it is one edit that happened forty times.
+      const target = path.join(home, "policy", "allowlist.json");
+      atomicSaves(target, (i) => JSON.stringify({ ask: [{ pattern: `v${i}` }] }));
+      await waitFor("one reload for the burst", () => server.calls.length > 0);
+      await quiet(300);
+      assert.equal(server.calls.length, 1, `reloaded ${server.calls.length} times`);
+      const reloaded = JSON.parse(fs.readFileSync(target, "utf8"));
+      assert.equal(reloaded.ask[0].pattern, "v39", "and it is the final state that survived");
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a change nobody signalled is still caught", async () => {
+  // The backstop is the whole reason a watcher is not load-bearing. Bun drops
+  // events outright under a fast burst — 60 atomic saves in 9ms produced none —
+  // so a design that trusted the event would leave a policy that reads as
+  // applied and is not.
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      { backstopMs: 40, debounceMs: 5, quietMs: 5, graceMs: 0 },
+    );
+    try {
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"unsignalled"}]}');
+      await waitFor("the backstop to catch it", () => server.calls.length > 0);
+      assert.equal(server.calls.length, 1);
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a reload request does not wait for the backstop once a turn ends", { concurrency: false }, async () => {
+  // An edit made mid-turn is held correctly; the idle moment is when it lands,
+  // and a half-minute backstop would make that feel like nothing happened.
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      refresh.activity();
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"mid-turn"}]}');
+      await quiet(300);
+      assert.equal(server.calls.length, 0, "held while the turn runs");
+      refresh.idle();
+      const took = await waitFor("the release at idle", () => server.calls.length > 0, 8000);
+      assert.equal(server.calls.length, 1);
+      assert.ok(took < FAST.backstopMs / 2, `took ${took}ms — the backstop cannot have been it`);
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a change held by a window is released when the window closes", async () => {
+  // The bug this pins: a change that arrives while the startup grace is still
+  // open used to have nothing to wake it, so it sat until the backstop — half a
+  // minute of a policy that reads as applied and is not. Found by measuring the
+  // real server: an edit landing just after a reload took 30s.
+  const server = await sink();
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      { backstopMs: 10_000, debounceMs: 5, quietMs: 5, graceMs: 300 },
+    );
+    try {
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"held"}]}');
+      const t0 = Date.now();
+      while (server.calls.length === 0 && Date.now() - t0 < 4000) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      assert.equal(server.calls.length, 1, "released when the grace closed");
+      assert.ok(Date.now() - t0 < 2000, "not left waiting for the backstop");
+    } finally {
+      refresh.stop();
+      await server.close();
+    }
+  });
+});
+
+test("a harness that cannot be reached is named once, not on every poll", async () => {
+  // The failure this guards is the one the repo cares about most: a policy that
+  // reads as applied while the session still enforces the previous version, with
+  // nothing anywhere saying so.
+  await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
+    const server = await sink({ reachable: false });
+    const seen = [];
+    const real = console.error;
+    console.error = (line) => seen.push(String(line));
+    const refresh = internals.startRefresh(
+      { directory: home, serverUrl: new URL(server.url) },
+      undefined,
+      FAST,
+    );
+    try {
+      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"x"}]}');
+      await waitFor("the failure report", () => reported(seen) === 1);
+    } finally {
+      refresh.stop();
+      console.error = real;
+      await server.close();
+    }
+    assert.equal(reported(seen), 1, "reported once");
+
+    // One attempt, not one per tick: the backoff is what stops a broken reload
+    // from becoming a busy loop against a server that is not there.
+    assert.equal(server.calls.length, 1, `tried ${server.calls.length} times`);
+  });
+});
+
+test("the plugin stops polling when the instance is disposed", async () => {
+  // A watcher that outlives the hooks object it belongs to would, on a reload,
+  // race the rebuilt instance's own watcher.
+  await withRoot({}, async (_, plugin) => {
+    await plugin.config({});
+    await plugin.dispose();
+    await plugin.dispose();
+  });
 });
