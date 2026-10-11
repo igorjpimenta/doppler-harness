@@ -14,7 +14,7 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.10.8
+npm install -g github:igorjpimenta/doppler-harness#2026.10.11
 doppler install opencode
 ```
 
@@ -51,7 +51,7 @@ doppler update                # refresh the engine, re-register (and pull, under
 doppler reload                # ask a running OpenCode to re-read the personal root now
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.10.8
+doppler version               # 2026.10.11
 doppler                       # usage
 ```
 

@@ -52,7 +52,7 @@ policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.
 
 Or install the CLI with npm, from git (the registry has no package yet):
 
-  npm install -g github:igorjpimenta/doppler-harness#2026.9.29
+  npm install -g github:igorjpimenta/doppler-harness#2026.10.11
   doppler install opencode
 
 Docs: https://github.com/igorjpimenta/doppler-harness
