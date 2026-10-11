@@ -100,15 +100,20 @@ function paths() {
 }
 
 // The user's own standing instructions, at OpenCode's native global path. Its
-// existence silences the root's AGENTS.md (see the config hook). The directory
-// resolves the way OpenCode itself resolves its global config — XDG_CONFIG_HOME
-// when set, else the process home — because a check pinned to ~/.config would
-// read a file OpenCode is not reading on an XDG setup. Resolved per call, so a
-// test isolates it with $HOME and XDG_CONFIG_HOME the same way the personal
+// existence silences the root's AGENTS.md (see the config hook).
+//
+// Pinned to the process home's config dir, deliberately, and NOT XDG-aware:
+// OpenCode honours XDG_CONFIG_HOME for its config *file* but reads the global
+// AGENTS.md from the default home path — verified against the real binary
+// (XDG-redirected global AGENTS.md → not in context; default-home one → in
+// context). An XDG-aware check therefore silences the root's file based on a
+// file OpenCode never reads, which is the two-voices outcome this whole
+// mechanism exists to prevent. Do not "fix" this into an XDG lookup.
+//
+// Resolved per call, so a test isolates it with $HOME the same way the personal
 // root isolates with DOPPLER_HOME.
 function globalAgentsMd() {
-  const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(configHome, "opencode", "AGENTS.md");
+  return path.join(os.homedir(), ".config", "opencode", "AGENTS.md");
 }
 
 // The OpenCode CLI verbs that add a plugin source. Harness vocabulary, so it
