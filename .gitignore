@@ -15,6 +15,9 @@
 !bin/
 !opencode/
 !test/
+# checks that need a live harness — opt-in, and deliberately not under test/
+# because `node --test test/` runs every file in there
+!scripts/
 !tsconfig.json
 !README.md
 

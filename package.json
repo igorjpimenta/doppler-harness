@@ -31,7 +31,8 @@
     "config"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test --test-concurrency=1 test/",
+    "test:live": "node scripts/live-idle-gate.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "prepare": "npm run build || (echo '[doppler] no tsc on PATH — fetching typescript, transpiling (type diagnostics expected)' && npx --yes -p typescript@5.9 tsc; node -e \"const{pathToFileURL}=require('url');import(pathToFileURL('dist/doppler.js'))\")"

@@ -78,7 +78,7 @@ console.log(JSON.stringify({ plugin: JSON.parse(out).plugin ?? [], plugin_origin
   };
 }
 
-function run(m, args, { dopplerHome } = {}) {
+function run(m, args, { dopplerHome, env } = {}) {
   return spawnSync(process.execPath, [DOPPLER, ...args], {
     encoding: "utf8",
     env: {
@@ -90,6 +90,7 @@ function run(m, args, { dopplerHome } = {}) {
       // dir: a "no opencode CLI" test that finds the developer's real one on
       // PATH would pass for the wrong reason.
       PATH: m.path,
+      ...env,
     },
   });
 }
@@ -553,6 +554,45 @@ test("update re-registers the package's own bridge, so a move is self-healing", 
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["update"]).status, 0);
     assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("reload asks a running session, and says when a turn is not interrupted", () => {
+  // The request is a file, not a call: a desktop-app session always runs the
+  // server with a password, so an external process cannot reach it, and storing a
+  // credential to work around that would be a worse trade than a file the user
+  // could have touched directly.
+  const m = machine();
+  const sentinel = path.join(m.home, ".doppler", ".reload");
+  try {
+    const r = run(m, ["reload"]);
+    assert.equal(r.status, 0);
+    assert.ok(fs.existsSync(sentinel), "the request is left where the bridge watches");
+    assert.match(out(r), /idle moment/);
+
+    // Two requests have to read as two even inside one filesystem timestamp tick,
+    // or a second `doppler reload` while nothing changed is silently a no-op.
+    fs.writeFileSync(sentinel, "7\n");
+    run(m, ["reload"]);
+    assert.equal(fs.readFileSync(sentinel, "utf8").trim(), "8");
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("doctor names when live refresh is turned off", () => {
+  // Off is the state where a policy edit silently does nothing until a restart,
+  // so it cannot be a preference nobody is told about.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    assert.match(out(run(m, ["doctor"])), /ok\s+live refresh/);
+
+    const off = run(m, ["doctor"], { dopplerHome: path.join(m.home, ".doppler"), env: { DOPPLER_RELOAD: "off" } });
+    assert.match(out(off), /warn\s+live refresh/);
+    assert.match(out(off), /doppler reload/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
