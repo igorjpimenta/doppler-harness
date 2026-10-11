@@ -316,8 +316,8 @@ rm -rf /tmp/scratch /tmp/scratch-home
 The `cli` line `doctor` prints is how you tell which copy you are running:
 
 ```
-ok    cli — ~/dev/doppler-harness on main — 2026.10.11        # the checkout
-ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.10.8   # a global install
+ok    cli — ~/dev/doppler-harness on main — 2026.10.11    # a git checkout
+ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.10.8  # a global install
 ```
 
 A branch name there means unreleased code. A global install pinned by tag has no
