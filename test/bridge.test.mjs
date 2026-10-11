@@ -491,9 +491,13 @@ async function sink({ reachable = true } = {}) {
 
 const reported = (lines) => lines.filter((l) => l.includes("could not reach OpenCode to reload")).length;
 
-// The backstop is parked at 10s everywhere below, so anything asserted to
-// happen faster than that can only have been the watcher.
-const FAST = { backstopMs: 10_000, debounceMs: 15, quietMs: 15, graceMs: 0 };
+// The backstop is parked far beyond every deadline below, so anything asserted
+// to happen at all can only have been the watcher. It used to be 10s against an
+// 8s deadline, which meant a missed event turned into an ambiguous timeout
+// instead of the failure it actually was: Bun coalesces watch events, and under
+// forty concurrent tests it misses often enough to matter.
+const FAST = { backstopMs: 60_000, debounceMs: 15, quietMs: 15, graceMs: 0 };
+const BACKSTOP = FAST.backstopMs;
 
 // Every timing below is a real race between a filesystem event, a debounce and a
 // timer, so nothing here waits a fixed span and hopes. It waits for the outcome
@@ -665,7 +669,7 @@ test("an edit is picked up from the watcher, not the backstop", { concurrency: f
       fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"watched"}]}');
       const took = await waitFor("a watcher-driven reload", () => server.calls.length > 0, 8000);
       assert.equal(server.calls.length, 1);
-      assert.ok(took < FAST.backstopMs / 2, `took ${took}ms — the backstop cannot have been it`);
+      assert.ok(took < BACKSTOP / 2, `took ${took}ms — the backstop cannot have been it`);
     } finally {
       refresh.stop();
       await server.close();
@@ -741,7 +745,7 @@ test("a reload request does not wait for the backstop once a turn ends", { concu
       refresh.idle();
       const took = await waitFor("the release at idle", () => server.calls.length > 0, 8000);
       assert.equal(server.calls.length, 1);
-      assert.ok(took < FAST.backstopMs / 2, `took ${took}ms — the backstop cannot have been it`);
+      assert.ok(took < BACKSTOP / 2, `took ${took}ms — the backstop cannot have been it`);
     } finally {
       refresh.stop();
       await server.close();
@@ -759,16 +763,17 @@ test("a change held by a window is released when the window closes", async () =>
     const refresh = internals.startRefresh(
       { directory: home, serverUrl: new URL(server.url) },
       undefined,
-      { backstopMs: 10_000, debounceMs: 5, quietMs: 5, graceMs: 300 },
+      { backstopMs: 60_000, debounceMs: 5, quietMs: 5, graceMs: 300 },
     );
     try {
       fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"held"}]}');
-      const t0 = Date.now();
-      while (server.calls.length === 0 && Date.now() - t0 < 4000) {
-        await new Promise((r) => setTimeout(r, 10));
-      }
+      const took = await waitFor("the release when the grace closed", () => server.calls.length > 0);
       assert.equal(server.calls.length, 1, "released when the grace closed");
-      assert.ok(Date.now() - t0 < 2000, "not left waiting for the backstop");
+      // The claim is that its own wake-up released it, not the backstop parked
+      // at 10s. Asserted against that rather than a wall-clock number, because
+      // forty concurrent tests can take longer to deliver a 300ms grace than the
+      // grace itself takes — which is what a fixed 2s bound was measuring.
+      assert.ok(took < BACKSTOP / 2, `released after ${took}ms — that is the backstop, not the wake-up`);
     } finally {
       refresh.stop();
       await server.close();
