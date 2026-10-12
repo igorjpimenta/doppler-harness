@@ -351,6 +351,10 @@ directory under `node_modules`, no symlink anywhere. So this is the closest you
 get to the shipped artifact without publishing, and it is how to test anything
 that depends on where the engine lives rather than on what is in it.
 
+Never test a release by installing from the git URL instead. On npm 11 that
+leaves a dangling link and the command never appears on `PATH`, so the test
+passes against a binary nobody will have.
+
 Two consequences worth naming before you start:
 
 - **The registration points into `node_modules`,** so `doctor` will warn
