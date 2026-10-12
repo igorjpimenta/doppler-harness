@@ -19,16 +19,24 @@ doppler install opencode
 ```
 
 That is a plain tarball, so npm unpacks it into a real directory and nothing has
-to be built at install time. It is the install to use.
+to be built at install time. It is the install to use, and it needs no npm
+configuration.
 
-> **Do not install from the git URL.** `npm install -g github:igorjpimenta/doppler-harness#<tag>`
-> looks equivalent and is not. npm 11 installs a git-sourced package by linking it
-> into its own temporary cache and then deleting that cache, leaving the package
-> directory a symlink to nothing: `doppler` disappears from `PATH`, and the
-> registered entry names a path that cannot resolve. Allowing the install script
-> does not prevent it — the link is npm's, not the package's. `doppler doctor`
-> names the cause when you run it from a clone, which is the only way to reach it
-> once the binary is gone.
+> **Installing from the git URL needs one flag.** `npm install -g github:igorjpimenta/doppler-harness#<tag>`
+> looks equivalent and is not, on npm 11: the package becomes a symlink into
+> npm's own temporary cache pointing at a clone npm has already deleted, so
+> `doppler` disappears from `PATH` and the registered entry names a path that
+> cannot resolve. npm 11 defaults `install-links` to `false`, which is what makes
+> it link rather than copy. Either turn that on —
+
+```bash
+npm install -g --install-links=true github:igorjpimenta/doppler-harness#2026.10.11
+```
+
+> — or install the tarball above, which needs no flags and no git. `doppler
+> doctor` names the cause if you hit it, but only from a clone or checkout: a
+> dangling install means the binary cannot run, so the clone is the only way back
+> to a `doctor` you can run.
 
 Restart OpenCode once — that loads the bridge — then write your first hook.
 Nothing is enforced until you do. After that first load you never restart it

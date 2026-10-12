@@ -51,7 +51,8 @@ Then write your first hook — nothing is enforced until you do. Copy
 policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.
 
 Or install the CLI with npm, from the release tarball (the registry has no
-package yet, and installing from the git URL leaves a dangling link on npm 11):
+package yet; a tarball needs no flags and no git — installing from the git URL
+leaves a dangling link unless you pass --install-links=true):
 
   npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/2026.10.11/igorjpimenta-doppler-harness-2026.10.11.tgz
   doppler install opencode

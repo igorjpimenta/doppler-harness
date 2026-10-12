@@ -447,11 +447,11 @@ function doctor() {
       // still be named: it is reachable from a checkout or a clone, which is
       // where someone goes once the binary stops answering.
       if (danglingPackage(path.resolve(registered, "..", ".."))) {
-        bad(
-          "registered path resolves",
-          "the installed package is a symlink npm deleted — it was installed from a git URL",
-          "install the release tarball instead; see Quick start in README.md",
-        );
+bad(
+        "registered path resolves",
+        "the installed package is a symlink npm deleted — it was installed from a git URL",
+        "reinstall with --install-links=true, or use the release tarball; see Quick start in README.md",
+      );
       }
     } else {
       ok("registered path resolves");

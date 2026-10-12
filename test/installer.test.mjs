@@ -620,7 +620,7 @@ test("doctor names a package npm linked and deleted", () => {
     const r = run(m, ["doctor"]);
     assert.match(out(r), /registered path resolves/);
     assert.match(out(r), /symlink npm deleted/);
-    assert.match(out(r), /release tarball/);
+    assert.match(out(r), /install-links=true/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
