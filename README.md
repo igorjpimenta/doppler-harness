@@ -14,17 +14,30 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g github:igorjpimenta/doppler-harness#2026.10.11
+npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/2026.10.11/igorjpimenta-doppler-harness-2026.10.11.tgz
 doppler install opencode
 ```
+
+That is a plain tarball, so npm unpacks it into a real directory and nothing has
+to be built at install time. It is the install to use.
+
+> **Do not install from the git URL.** `npm install -g github:igorjpimenta/doppler-harness#<tag>`
+> looks equivalent and is not. npm 11 installs a git-sourced package by linking it
+> into its own temporary cache and then deleting that cache, leaving the package
+> directory a symlink to nothing: `doppler` disappears from `PATH`, and the
+> registered entry names a path that cannot resolve. Allowing the install script
+> does not prevent it — the link is npm's, not the package's. `doppler doctor`
+> names the cause when you run it from a clone, which is the only way to reach it
+> once the binary is gone.
 
 Restart OpenCode once — that loads the bridge — then write your first hook.
 Nothing is enforced until you do. After that first load you never restart it
 again to change anything: edit a hook and it applies to the next tool call, edit
 a policy, agent or skill and it applies at the session's next idle moment.
 
-The package is not on the npm registry yet, so install it from git. Pin the tag
-or a commit; `main` will move. `install.sh` is the same thing as a plain clone:
+The package is not on the npm registry yet. Every release carries a tarball as an
+asset, so the URL above only changes with the version. `install.sh` does the
+same thing as a plain clone:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/igorjpimenta/doppler-harness/main/install.sh | bash -s -- opencode
