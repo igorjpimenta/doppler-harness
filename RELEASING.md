@@ -22,6 +22,15 @@ date, because a version is a date plus a tiebreaker, not an ordering.
 3. Tag the release commit — `git tag <version> -m "<version> — <summary>"` —
    and push the tag.
 4. `gh release create <version>` with the title and notes below.
+5. `npm pack`, then attach the tarball as a release asset:
+   `gh release upload <version> <pkg>-<version>.tgz`
+
+   **Not optional.** The documented install is the release tarball, and installing
+   from the git URL leaves a package directory that is a symlink into npm's
+   temporary cache pointing at a clone npm has already deleted — `doppler` then
+   vanishes from `PATH`. Verified on npm 11.19.0, and committing `dist/` to the
+   repository does not prevent it: the link is npm's, not the package's. The
+   asset is the install.
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.
@@ -74,6 +83,11 @@ already upgraded, and the one a changelog almost never has. If a release is free
 say so in one line rather than leaving it out.
 
 ## Publishing
+
+Do not install-test from the git URL to check a release works. On npm 11 it
+leaves a dangling link, so a test that appears to pass tells you nothing about
+the published artifact. Install the asset you just uploaded, which is what users
+will get.
 
 Publish at the moment the tag ships. Backfilling releases afterwards makes the
 releases page claim a dozen versions appeared on the day you got round to
