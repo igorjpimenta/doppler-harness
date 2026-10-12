@@ -508,6 +508,13 @@ const BACKSTOP = FAST.backstopMs;
 // them, each with watchers, sockets and spawned hooks — and the machine being
 // busy is not a property of the design. Every assertion that actually has an
 // opinion about time passes its own tighter bound.
+//
+// Where a test's claim is "this was the watcher, not the backstop", the bound
+// that matters is the backstop (60s), not a wall-clock number. Measured in
+// isolation the idle-gate release lands at ~33ms every time; under a full suite
+// it has been observed past 8s. So those tests wait up to 20s and assert they
+// beat half the backstop, which is the claim, rather than a deadline that only
+// ever measured the machine.
 async function waitFor(what, predicate, timeout = 8000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
@@ -667,7 +674,7 @@ test("an edit is picked up from the watcher, not the backstop", { concurrency: f
     );
     try {
       fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"watched"}]}');
-      const took = await waitFor("a watcher-driven reload", () => server.calls.length > 0, 8000);
+      const took = await waitFor("a watcher-driven reload", () => server.calls.length > 0, 20_000);
       assert.equal(server.calls.length, 1);
       assert.ok(took < BACKSTOP / 2, `took ${took}ms — the backstop cannot have been it`);
     } finally {
@@ -743,7 +750,7 @@ test("a reload request does not wait for the backstop once a turn ends", { concu
       await quiet(300);
       assert.equal(server.calls.length, 0, "held while the turn runs");
       refresh.idle();
-      const took = await waitFor("the release at idle", () => server.calls.length > 0, 8000);
+      const took = await waitFor("the release at idle", () => server.calls.length > 0, 20_000);
       assert.equal(server.calls.length, 1);
       assert.ok(took < BACKSTOP / 2, `took ${took}ms — the backstop cannot have been it`);
     } finally {
