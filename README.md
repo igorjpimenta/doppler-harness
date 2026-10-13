@@ -339,15 +339,22 @@ HOME=/tmp/scratch-home node bin/doppler.mjs install opencode   # isolated
 rm -rf /tmp/scratch /tmp/scratch-home
 ```
 
-The `cli` line `doctor` prints is how you tell which copy you are running:
+The `cli` line `doctor` prints is how you tell which copy you are running.
+There is exactly one — it is whichever `doppler` you invoked, not every copy on
+the machine. From a checkout it names the branch:
 
 ```
-ok    cli — ~/dev/doppler-harness on main — 2026.10.5         # the checkout
-ok    cli — /opt/homebrew/lib/node_modules/…  — 2026.9.29-3  # a global install
+ok    cli — ~/dev/doppler-harness on main — 2026.10.13
 ```
 
-A branch name there means unreleased code. A global install pinned by tag has no
-branch, because it is not a checkout.
+From a global install it names the path, and carries no branch, because it is
+not a checkout:
+
+```
+ok    cli — /opt/homebrew/lib/node_modules/@igorjpimenta/doppler-harness — 2026.10.13
+```
+
+A branch name there means unreleased code.
 
 If you want the global `doppler` to track your edits instead of a tag, link it:
 

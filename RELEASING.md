@@ -1,8 +1,9 @@
 # Releasing
 
 CalVer, one tag per release, and a note per release. The tag is the contract —
-`npm install -g github:igorjpimenta/doppler-harness#<tag>` resolves to it — so
-the version has to be decided before the tag is cut, not after.
+`npm install -g --install-links=true github:igorjpimenta/doppler-harness#<tag>`
+resolves to it — so the version has to be decided before the tag is cut, not
+after.
 
 ## Version
 
@@ -25,12 +26,15 @@ date, because a version is a date plus a tiebreaker, not an ordering.
 5. `npm pack`, then attach the tarball as a release asset:
    `gh release upload <version> <pkg>-<version>.tgz`
 
-   **Not optional.** The documented install is the release tarball, and installing
-   from the git URL leaves a package directory that is a symlink into npm's
-   temporary cache pointing at a clone npm has already deleted — `doppler` then
-   vanishes from `PATH`. Verified on npm 11.19.0, and committing `dist/` to the
-   repository does not prevent it: the link is npm's, not the package's. The
-   asset is the install.
+   **Not optional.** The documented install is the git URL, and it needs
+   `--install-links=true` to work at all: npm defaults `install-links` to
+   `false`, so a global install from a git URL leaves a package directory that
+   is a symlink into npm's temporary cache pointing at a clone npm has already
+   deleted — `doppler` then vanishes from `PATH`. It is npm's own default,
+   unchanged across npm 8 through 11, and nothing in the package can set it
+   (npm/cli#6984). The asset is the flag-free, git-free install, and it is also
+   what an install test has to exercise, since that is what the flag-free reader
+   gets.
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.
@@ -67,7 +71,7 @@ with their conditions: *"measured against a real server: 104–254ms"*, not
 ### How to upgrade
 
 ```
-npm install -g github:igorjpimenta/doppler-harness#<version>
+npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
 doppler install opencode
 ```
 
@@ -84,10 +88,10 @@ say so in one line rather than leaving it out.
 
 ## Publishing
 
-Do not install-test from the git URL to check a release works. On npm 11 it
+Do not install-test from the git URL to check a release works. It builds a
+different artifact from the one a flag-free reader gets, and omitting the flag
 leaves a dangling link, so a test that appears to pass tells you nothing about
-the published artifact. Install the asset you just uploaded, which is what users
-will get.
+the published package. Install the asset you just uploaded.
 
 Publish at the moment the tag ships. Backfilling releases afterwards makes the
 releases page claim a dozen versions appeared on the day you got round to
