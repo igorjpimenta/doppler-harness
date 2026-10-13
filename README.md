@@ -77,7 +77,7 @@ doppler update                # refresh the engine, re-register (and pull, under
 doppler reload                # ask a running OpenCode to re-read the personal root now
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
-doppler version               # 2026.10.11
+doppler version               # the version you installed
 doppler                       # usage
 ```
 
@@ -344,14 +344,14 @@ There is exactly one — it is whichever `doppler` you invoked, not every copy o
 the machine. From a checkout it names the branch:
 
 ```
-ok    cli — ~/dev/doppler-harness on main — 2026.10.13
+ok    cli — ~/dev/doppler-harness on main — <version>
 ```
 
 From a global install it names the path, and carries no branch, because it is
 not a checkout:
 
 ```
-ok    cli — /opt/homebrew/lib/node_modules/@igorjpimenta/doppler-harness — 2026.10.13
+ok    cli — /opt/homebrew/lib/node_modules/@igorjpimenta/doppler-harness — <version>
 ```
 
 A branch name there means unreleased code.
@@ -399,7 +399,7 @@ Two consequences worth naming before you start:
   tagged the same as the published one is indistinguishable at runtime —
   `doppler version` reports the same string either way. Bump `version` in
   `package.json` before packing, and use a suffix npm's semver accepts
-  (`2026.9.29-4`); a build metadata tag like `2026.9.29-3+local` fails this
+  (`<version>-4`); a build metadata tag like `<version>-3+local` fails this
   package's own version-shape test.
 
 Run `npm test` before packing, not after: the tarball is what you install, so a
