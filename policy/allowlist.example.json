@@ -27,10 +27,20 @@
       "note": "git merge"
     }
   ],
+  "deny": [
+    {
+      "pattern": "*| sh*",
+      "note": "piping fetched content into a shell executes it unreviewed"
+    },
+    {
+      "pattern": "*sudo *",
+      "note": "elevation is never agent-owned; run it yourself"
+    }
+  ],
   "tools": {
     "allow": [
       "webfetch"
     ]
   },
-  "_comment": "EXAMPLE permission rules, compiled by the bridge into the harness's own permission engine (OpenCode's config.permission) at startup. The installer copies this to policy/allowlist.json on first run; edit that file freely. Patterns are GLOBS, not regexes, and are passed through verbatim — write what you would type to the shell. They are leading-* wildcards on purpose: over-matching costs an unnecessary prompt, under-matching silently skips a rule you thought was armed. No catch-all is emitted, so anything unmatched keeps your own default. Tiers are emitted allow first, ask last, and the harness takes the last matching rule — so on an overlap the ask wins."
+  "_comment": "EXAMPLE permission rules, compiled by the bridge into the harness's own permission engine (OpenCode's config.permission) at startup. The installer copies this to policy/allowlist.json on first run; edit that file freely. Patterns are GLOBS, not regexes, and are passed through verbatim — write what you would type to the shell. They are leading-* wildcards on purpose: over-matching costs an unnecessary prompt, under-matching silently skips a rule you thought was armed. No catch-all is emitted, so anything unmatched keeps your own default. Tiers are emitted allow, then ask, then deny, and the harness takes the last matching rule — so on an overlap the deny wins, then the ask. A deny is the engine's own: it holds even in auto-approve mode, where a hook deny would not."
 }

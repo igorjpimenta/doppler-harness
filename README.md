@@ -142,7 +142,11 @@ Automatic live refresh can be turned off with `DOPPLER_RELOAD=off`, which leaves
   permission engine, so asks are real OpenCode prompts with the harness's own UI,
   not a hook pretending to be one, and a change to the file is recompiled without
   a restart. Patterns are globs and are passed through verbatim, so a rule cannot
-  be silently mistranslated into something that no longer matches.
+  be silently mistranslated into something that no longer matches. Three tiers —
+  `allow`, `ask`, `deny` — are emitted in that order, and the engine takes the
+  last matching rule, so on an overlap the deny wins, then the ask. A `deny` is
+  the engine's own and holds even in auto-approve mode, where a hook deny would
+  not fire.
 - **Your OpenCode stays yours** — its private `agent/`, `skill/`, `command/`
   directories and everything else in your config keep working exactly as before.
   Doppler only ever *adds* to the config, and only ever appends a permission
