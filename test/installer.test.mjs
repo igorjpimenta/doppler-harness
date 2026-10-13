@@ -597,3 +597,55 @@ test("doctor names when live refresh is turned off", () => {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
 });
+
+// npm 11 installs a package from a git URL by linking it into its own cache and
+// then deleting that cache, so the whole package directory becomes a symlink to
+// nothing. `doppler` stops being on PATH at all — which is the real symptom —
+// and the registered entry names a path that cannot resolve. This is the only
+// place that can still say why, so it has to.
+test("doctor names a package npm linked and deleted", () => {
+  const m = machine();
+  const fake = path.join(m.home, "fake-install", "node_modules", "@igorjpimenta");
+  const pkg = path.join(fake, "doppler-harness");
+  const gone = path.join(m.home, "npm-cache", "git-cloneGONE");
+  try {
+    fs.mkdirSync(path.dirname(pkg), { recursive: true });
+    fs.symlinkSync(gone, pkg);
+
+    // The registration points into that package, as a real install leaves it.
+    const entry = { $schema: "https://opencode.ai/config.json" };
+    entry.plugin = [`${pathToFileURL(path.join(pkg, "dist", "doppler.js")).href}`];
+    fs.writeFileSync(path.join(m.cfgDir, "opencode.json"), `${JSON.stringify(entry, null, 2)}\n`);
+
+    const r = run(m, ["doctor"]);
+    assert.match(out(r), /registered path resolves/);
+    assert.match(out(r), /symlink npm deleted/);
+    assert.match(out(r), /install-links=true/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+// The opposite case, which must not be reported as broken: `npm link` also
+// symlinks the package, and a development setup that still resolves is working.
+test("a package symlink that still resolves is not a failure", () => {
+  const m = machine();
+  const real = path.join(m.home, "checkout");
+  const linked = path.join(m.home, "linked-install", "node_modules", "@igorjpimenta", "doppler-harness");
+  try {
+    fs.mkdirSync(path.join(real, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(real, "dist", "doppler.js"), "// bridge\n");
+    fs.mkdirSync(path.dirname(linked), { recursive: true });
+    fs.symlinkSync(real, linked);
+
+    const entry = { $schema: "https://opencode.ai/config.json" };
+    entry.plugin = [`${pathToFileURL(path.join(linked, "dist", "doppler.js")).href}`];
+    fs.writeFileSync(path.join(m.cfgDir, "opencode.json"), `${JSON.stringify(entry, null, 2)}\n`);
+
+    const r = run(m, ["doctor"]);
+    assert.doesNotMatch(out(r), /symlink npm deleted/);
+    assert.match(out(r), /ok\s+registered path resolves/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});

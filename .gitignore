@@ -20,6 +20,7 @@
 !scripts/
 !tsconfig.json
 !README.md
+!RELEASING.md
 
 # --- noise to drop even inside tracked dirs ---
 **/.DS_Store

@@ -250,6 +250,20 @@ function opencodeCli() {
 
 const sh = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "inherit"] }).toString().trim();
 
+// True when `dir` is a symlink whose target no longer exists. Only a broken one:
+// `npm link` also symlinks a package, and a development setup that still
+// resolves is working, however unusual it looks on disk.
+function danglingPackage(dir) {
+  let link;
+  try {
+    link = fs.readlinkSync(dir);
+  } catch {
+    return false; // not a symlink, or gone entirely
+  }
+  if (fs.existsSync(dir)) return false;
+  return !fs.existsSync(path.resolve(path.dirname(dir), link));
+}
+
 // Registering is not the same as working, and the difference is invisible: a
 // config OpenCode refuses to parse means the bridge never loads and every hook
 // is silently inert. That is the one failure mode worth failing loudly on.
@@ -426,6 +440,19 @@ function doctor() {
     else bad("registered path is stale", `points at ${registered}, not ${BRIDGE}`, "doppler install opencode");
     if (!fs.existsSync(registered)) {
       bad("registered path resolves", `no such file: ${registered}`, "doppler install opencode");
+      // "no such file" is true and useless when the package directory is a
+      // symlink npm pointed into its own cache and has since deleted — which is
+      // what an install from a git URL becomes on npm 11. The command itself is
+      // gone from PATH at that point, so this is the only place the cause can
+      // still be named: it is reachable from a checkout or a clone, which is
+      // where someone goes once the binary stops answering.
+      if (danglingPackage(path.resolve(registered, "..", ".."))) {
+bad(
+        "registered path resolves",
+        "the installed package is a symlink npm deleted — it was installed from a git URL",
+        "reinstall with --install-links=true, or use the release tarball; see Quick start in README.md",
+      );
+      }
     } else {
       ok("registered path resolves");
     }

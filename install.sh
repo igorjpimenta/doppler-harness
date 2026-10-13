@@ -50,10 +50,17 @@ Connect a harness (restart it afterwards):
 Then write your first hook — nothing is enforced until you do. Copy
 policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.
 
-Or install the CLI with npm, from git (the registry has no package yet):
+Or install the CLI with npm from the git URL. The --install-links=true flag is
+required, not decoration: npm defaults install-links to false, so the package
+would otherwise be left as a symlink into a temporary cache npm has already
+deleted, and doppler never lands on PATH. See npm/cli#6984.
 
-  npm install -g github:igorjpimenta/doppler-harness#2026.10.11
+  npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
   doppler install opencode
+
+Every release also carries a tarball asset, which needs neither the flag nor git:
+
+  npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
 
 Docs: https://github.com/igorjpimenta/doppler-harness
 EOF
