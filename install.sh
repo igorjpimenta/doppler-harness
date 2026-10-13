@@ -54,7 +54,7 @@ Or install the CLI with npm, from the release tarball (the registry has no
 package yet; a tarball needs no flags and no git — installing from the git URL
 leaves a dangling link unless you pass --install-links=true):
 
-  npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/2026.10.11/igorjpimenta-doppler-harness-2026.10.11.tgz
+  npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
   doppler install opencode
 
 Docs: https://github.com/igorjpimenta/doppler-harness

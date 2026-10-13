@@ -14,13 +14,17 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/2026.10.11/igorjpimenta-doppler-harness-2026.10.11.tgz
+npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
 doppler install opencode
 ```
 
 That is a plain tarball, so npm unpacks it into a real directory and nothing has
 to be built at install time. It is the install to use, and it needs no npm
 configuration.
+
+`<version>` is substituted when a release is cut — a version only changes on the
+release that is for it, never in an ordinary change — so the current one is the
+tag on the [releases page](https://github.com/igorjpimenta/doppler-harness/releases).
 
 > **Installing from the git URL needs one flag.** `npm install -g github:igorjpimenta/doppler-harness#<tag>`
 > looks equivalent and is not, on npm 11: the package becomes a symlink into
@@ -30,7 +34,7 @@ configuration.
 > it link rather than copy. Either turn that on —
 
 ```bash
-npm install -g --install-links=true github:igorjpimenta/doppler-harness#2026.10.11
+npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
 ```
 
 > — or install the tarball above, which needs no flags and no git. `doppler
