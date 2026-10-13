@@ -264,7 +264,7 @@ copied — never edit there. Conventions: Angular commits with scopes; CalVer
 the note shape.
 
 ```
-npm test           # 94 tests: the splicer, agent parsing, bridge, installer
+npm test           # 96 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
 npm run build      # required before packing — dist/ is gitignored
 npm run test:live  # opt-in: the reload idle gate, against a real turn
