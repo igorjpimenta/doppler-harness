@@ -98,15 +98,18 @@ otherwise point at it:
 export OPENCODE_BIN=/path/to/opencode
 ```
 
+Automatic live refresh can be turned off with `DOPPLER_RELOAD=off`, which leaves
+`doppler reload` working; `doctor` reports which way it is set.
+
 ## What you get
 
 - **Skills** — every `skills/` directory in your root is registered through
   OpenCode's own `skills.paths`, scanned in place for `**/SKILL.md`. No copy, no
   re-install when you edit one.
-- **Agents** — `~/.doppler/agents/*.md`, read at startup and injected as
-  `doppler-<name>` subagents. Namespaced so a personal agent can never shadow a
-  built-in (`build`, `plan`, `explore`, `general`) or collide with your own
-  agents in `~/.config/opencode/agent/`.
+- **Agents** — `~/.doppler/agents/*.md`, injected as `doppler-<name>` subagents.
+  Namespaced so a personal agent can never shadow a built-in (`build`, `plan`,
+  `explore`, `general`) or collide with your own agents in
+  `~/.config/opencode/agent/`.
 - **Instructions** — a root `AGENTS.md` becomes standing instructions in every
   OpenCode session, registered through the config's own `instructions` field and
   read in place — as a fallback. Your own global instructions
@@ -114,14 +117,18 @@ export OPENCODE_BIN=/path/to/opencode
   outrank it: while that file exists, the root's stays dormant, so there are
   never two standing instructions with no visible precedence.
 - **Hooks** — *yours to write.* The bridge runs every `.mjs` in your root's
-  `hooks/` on every tool call. A working example ships as
-  `policy/hook.example.mjs`; nothing is enforced until you have one. See
-  [Writing a hook](#writing-a-hook).
+  `hooks/` on every tool call, so editing one applies to the very next tool
+  call. Two examples ship: `policy/hook.example.mjs` is the protocol in
+  miniature, and `policy/secrets-guard.example.mjs` is a sensitive-path
+  guardrail — worth having, because `allowlist.json` sets
+  `external_directory: allow`, which without one is an agent's unsupervised
+  reach over your machine. Copy either into `hooks/` and rename it; nothing is
+  enforced until you have one. See [Writing a hook](#writing-a-hook).
 - **Permissions** — your `policy/allowlist.json` is compiled into OpenCode's own
-  permission engine at startup, so asks are real OpenCode prompts with the
-  harness's own UI, not a hook pretending to be one. Patterns are globs and are
-  passed through verbatim, so a rule cannot be silently mistranslated into
-  something that no longer matches.
+  permission engine, so asks are real OpenCode prompts with the harness's own UI,
+  not a hook pretending to be one, and a change to the file is recompiled without
+  a restart. Patterns are globs and are passed through verbatim, so a rule cannot
+  be silently mistranslated into something that no longer matches.
 - **Your OpenCode stays yours** — its private `agent/`, `skill/`, `command/`
   directories and everything else in your config keep working exactly as before.
   Doppler only ever *adds* to the config, and only ever appends a permission
@@ -134,16 +141,18 @@ export OPENCODE_BIN=/path/to/opencode
 ```
 ~/.doppler/                       everything here is yours
   hooks/*.mjs                     the policy, one file per rule
+  hooks/<name>.ask.json           what that hook may ask about, if anything
   policy/allowlist.json           permission rules, as data
   policy/guard-rules.json         extra rules, if a hook reads them
   policy/source-allowlist.json    trusted sources
   agents/*.md   skills/<n>/SKILL.md   AGENTS.md
   opencode.json                   generated: where the root is
+  .reload                         generated: bumped by `doppler reload`
 
 package root
   opencode/doppler.ts             the ONLY file that knows OpenCode exists
   bin/doppler.mjs                 the installer
-  policy/*.example.*              formats, seeded on first run
+  policy/*.example.*              formats and worked examples, seeded on first run
 ```
 
 The package ships no content. `install` creates the directories, seeds the
@@ -193,6 +202,35 @@ session. A non-zero exit is indistinguishable from a hook that is not installed.
 
 Both properties are load-bearing enough that the bridge reports at startup
 whether it found any hooks at all.
+
+### Getting a prompt instead of a block
+
+`ask` from a hook is a block, because a pre-tool hook runs *after* the harness has
+settled the call's permission — it can no longer raise one. That leaves the model
+as the messenger, and a model that never relays the question just retries a
+command that can never run.
+
+So a hook can declare what it asks about, beside it:
+
+```jsonc
+// ~/.doppler/hooks/deploy.ask.json
+{ "ask": ["*npm publish*", "*terraform apply*"] }
+```
+
+Those patterns are compiled into OpenCode's own permission engine, where they
+become real prompts with the harness's own UI — raised *before* your hook runs,
+and invisible to the model. Your hook still runs afterwards and still denies;
+the declaration only moves the question from the block back to you.
+
+Two rules, both of which `doctor` enforces:
+
+- **Answer `deny` for a declared pattern.** A hook that declares patterns *and*
+  answers `ask` for them preempts the prompt it just asked for.
+- **Declare only what you really ask about.** Every declared pattern is
+  prompted, so the cost of declaring too much is you being interrupted.
+
+Patterns here are globs, matched by OpenCode itself — the same shape as
+`allowlist.json`, and passed through verbatim.
 
 ## FAQ
 
@@ -248,12 +286,21 @@ plugin, and nothing is sent anywhere else.
 Source of truth is a dev checkout; `~/.doppler` is installed from it and is
 copied — never edit there. Conventions: Angular commits with scopes; CalVer
 `YYYY.M.D` in `package.json`, with a `-N` suffix for a same-day re-release;
-`main` receives code only via PRs.
+`main` receives code only via PRs. `RELEASING.md` has the release procedure and
+the note shape.
 
 ```
-npm test         # 76 tests: the splicer, agent parsing, bridge, installer
+npm test           # 96 tests: the splicer, agent parsing, bridge, installer
 npm run typecheck
+npm run build      # required before packing — dist/ is gitignored
+npm run test:live  # opt-in: the reload idle gate, against a real turn
 ```
+
+`npm run test:live` needs a model your account can actually serve
+(`DOPPLER_LIVE_MODEL=provider/model` pins one), because holding the gate means
+racing a real turn — `npm test` cannot do that. It exits 77 when the turn never
+happened and 1 only when the gate misbehaved, so a provider outage is not
+mistaken for a regression.
 
 The bridge is TypeScript and is the only file typed against
 `@opencode-ai/plugin`. What ships is its build output: `npm run build` erases the
@@ -330,6 +377,10 @@ A tarball install and a registry install are the same thing on disk: a real
 directory under `node_modules`, no symlink anywhere. So this is the closest you
 get to the shipped artifact without publishing, and it is how to test anything
 that depends on where the engine lives rather than on what is in it.
+
+Never test a release by installing from the git URL instead. On npm 11 that
+leaves a dangling link and the command never appears on `PATH`, so the test
+passes against a binary nobody will have.
 
 Two consequences worth naming before you start:
 
