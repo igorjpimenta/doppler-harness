@@ -217,8 +217,52 @@ test("allowlist.json compiles to the host's permission map, verbatim", async () 
     await plugin.config(cfg);
     assert.deepEqual(cfg.permission, {
       webfetch: "allow",
-      bash: { "*git push*": "ask", "*DOPPLER_BYPASS_GUARDS=1 grep*": "allow" },
+      bash: { "*DOPPLER_BYPASS_GUARDS=1 grep*": "allow", "*git push*": "ask" },
     });
+    // deepEqual ignores key order, and order is the semantics here: the ask
+    // tier must sit after the allow tier, or a broad allow swallows a narrow
+    // ask under last-match-wins.
+    assert.deepEqual(Object.keys(cfg.permission.bash), [
+      "*DOPPLER_BYPASS_GUARDS=1 grep*",
+      "*git push*",
+    ]);
+  });
+});
+
+test("a broad allow does not swallow a narrow ask", async () => {
+  // The realistic overlap: a catch-all allow plus a specific ask. OpenCode
+  // takes the LAST matching rule, so the ask has to be the later entry —
+  // emitted allows-first, asks-last — or "git push origin" would run silently.
+  await withRoot({
+    policy: {
+      "allowlist.json": JSON.stringify({
+        allow: [{ pattern: "*" }],
+        ask: [{ pattern: "*git push*" }],
+      }),
+    },
+  }, async (_, plugin) => {
+    const cfg = { permission: {} };
+    await plugin.config(cfg);
+    assert.deepEqual(Object.keys(cfg.permission.bash), ["*", "*git push*"]);
+    const last = (cmd) =>
+      Object.entries(cfg.permission.bash).filter(([p]) => p === "*" || cmd.includes(p.slice(1, -1))).pop();
+    assert.equal(last("git push origin main")[1], "ask");
+    assert.equal(last("ls -la")[1], "allow");
+  });
+});
+
+test("an identical pattern in both tiers resolves to the ask", async () => {
+  await withRoot({
+    policy: {
+      "allowlist.json": JSON.stringify({
+        allow: [{ pattern: "*gh pr merge*" }],
+        ask: [{ pattern: "*gh pr merge*" }],
+      }),
+    },
+  }, async (_, plugin) => {
+    const cfg = { permission: {} };
+    await plugin.config(cfg);
+    assert.equal(cfg.permission.bash["*gh pr merge*"], "ask");
   });
 });
 
