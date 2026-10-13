@@ -14,42 +14,43 @@ writing a bridge, not a second implementation.
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
-npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
+npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
 doppler install opencode
 ```
 
-That is a plain tarball, so npm unpacks it into a real directory and nothing has
-to be built at install time. It is the install to use, and it needs no npm
-configuration.
+`--install-links=true` is required, not decoration. npm defaults `install-links`
+to `false`, and a global install from a git URL then leaves the package as a
+symlink into npm's own temporary cache pointing at a clone npm has already
+deleted: `doppler` never lands on `PATH` and the registered entry names a path
+that cannot resolve. Nothing in the package can set it — it is npm's own default,
+and the behaviour is unchanged across npm 8 through 11
+([npm/cli#6984](https://github.com/npm/cli/issues/6984),
+[#4148](https://github.com/npm/cli/issues/4148),
+[#3692](https://github.com/npm/cli/issues/3692)) — so the flag belongs in the
+command. Setting it once instead also works: `npm config set install-links true`.
 
 `<version>` is substituted when a release is cut — a version only changes on the
 release that is for it, never in an ordinary change — so the current one is the
 tag on the [releases page](https://github.com/igorjpimenta/doppler-harness/releases).
 
-> **Installing from the git URL needs one flag.** `npm install -g github:igorjpimenta/doppler-harness#<tag>`
-> looks equivalent and is not, on npm 11: the package becomes a symlink into
-> npm's own temporary cache pointing at a clone npm has already deleted, so
-> `doppler` disappears from `PATH` and the registered entry names a path that
-> cannot resolve. npm 11 defaults `install-links` to `false`, which is what makes
-> it link rather than copy. Either turn that on —
+Every release also carries a tarball asset, which npm unpacks into a real
+directory and needs neither the flag nor `git`:
 
 ```bash
-npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
+npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
 ```
 
-> — or install the tarball above, which needs no flags and no git. `doppler
-> doctor` names the cause if you hit it, but only from a clone or checkout: a
-> dangling install means the binary cannot run, so the clone is the only way back
-> to a `doctor` you can run.
+If `doppler` is missing from `PATH` after an install, this is why — and `doppler
+doctor` names the cause, but only from a clone or checkout, because a dangling
+install means the binary cannot run and the clone is the only way back to a
+`doctor` you can run.
 
 Restart OpenCode once — that loads the bridge — then write your first hook.
 Nothing is enforced until you do. After that first load you never restart it
 again to change anything: edit a hook and it applies to the next tool call, edit
 a policy, agent or skill and it applies at the session's next idle moment.
 
-The package is not on the npm registry yet. Every release carries a tarball as an
-asset, so the URL above only changes with the version. `install.sh` does the
-same thing as a plain clone:
+`install.sh` does the same thing as a plain clone:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/igorjpimenta/doppler-harness/main/install.sh | bash -s -- opencode
@@ -309,8 +310,9 @@ npm link            # in the checkout — `doppler` now runs your working copy
 
 The trade is that `doppler version` then reports whatever branch is checked out,
 including branches that were never released, and `doctor` cannot tell you that
-`install` came from a released tag. Link it to iterate; re-pin with
-`npm install -g github:igorjpimenta/doppler-harness#<tag>` when you are done.
+`install` came from a released tag. Re-pin with
+`npm install -g --install-links=true github:igorjpimenta/doppler-harness#<tag>`
+when you are done.
 
 #### Testing an unreleased build as a real install
 
@@ -348,6 +350,6 @@ failure there is the one you would ship.
 To go back to the release:
 
 ```bash
-npm install -g "github:igorjpimenta/doppler-harness#<tag>"
+npm install -g --install-links=true "github:igorjpimenta/doppler-harness#<tag>"
 doppler install opencode
 ```
