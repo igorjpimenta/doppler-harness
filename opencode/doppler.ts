@@ -67,6 +67,7 @@ type HookDecision = { decision: "deny" | "ask"; reason: string };
 type Allowlist = {
   allow?: { pattern: string; note?: string }[];
   ask?: { pattern: string; note?: string }[];
+  deny?: { pattern: string; note?: string }[];
   tools?: { allow?: string[] };
 };
 
@@ -264,6 +265,14 @@ function compiledPermission() {
   // A hook's declared asks join the same tier for the same reason: they are the
   // user being asked, so they have to reach the user as a prompt.
   for (const p of declaredAskPatterns()) bash[p] = "ask";
+  // Deny is emitted after every other tier, so it out-ranks them all: a command
+  // that matches both an ask and a deny is blocked, not prompted. A deny here
+  // is the host engine's own — enforced in auto-approve mode too, unlike a
+  // hook deny, which only fires when the hook layer is on and can be bypassed.
+  for (const r of rules.deny ?? []) {
+    if (typeof r?.pattern !== "string" || !r.pattern) continue;
+    bash[r.pattern] = "deny";
+  }
   if (Object.keys(bash).length) permission.bash = bash;
 
   return Object.keys(permission).length ? permission : null;
