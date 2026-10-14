@@ -460,14 +460,11 @@ function report(message: string, level: "debug" | "info" | "warn" | "error", cli
 // for an idle boundary instead of firing on the change — a dispose mid-turn kills
 // the turn, which is a worse outcome than a stale rule for one command.
 // A watcher makes the common case fast; the fingerprint is what makes it
-// correct. Measured under Bun 1.3.14 / Node 26 on macOS: a recursive
-// `fs.watch` delivers in ~11ms and reacts end-to-end in ~130ms once debounced,
-// but it coalesces — 60 atomic saves in 9ms produced 0 events twice out of three
-// runs, and delivery of a burst lagged by 400ms+. At editing cadence (250ms
-// apart) it delivered every one of 30 saves in 6 runs. So an event is a reason to
-// look now, never the reason a change counts: the fingerprint comparison is
-// still what decides, and it converged on the final state of every burst across
-// 6 rounds. A purely reactive design would have shipped a policy that silently
+// correct. A recursive `fs.watch` reactives end-to-end in the low hundreds of
+// milliseconds once debounced, but it coalesces under a burst, so an event is a
+// reason to look now and never the reason a change counts: the fingerprint
+// comparison is still what decides, and it converges on the final state of a
+// burst. A purely reactive design would have shipped a policy that silently
 // stopped applying after an editor's autosave.
 const RELOAD_DEBOUNCE_MS = 120;
 

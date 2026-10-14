@@ -492,10 +492,10 @@ async function sink({ reachable = true } = {}) {
 const reported = (lines) => lines.filter((l) => l.includes("could not reach OpenCode to reload")).length;
 
 // The backstop is parked far beyond every deadline below, so anything asserted
-// to happen at all can only have been the watcher. It used to be 10s against an
-// 8s deadline, which meant a missed event turned into an ambiguous timeout
-// instead of the failure it actually was: Bun coalesces watch events, and under
-// forty concurrent tests it misses often enough to matter.
+// to happen at all can only have been the watcher. It has to be far enough that
+// a missed event turns into a failed assertion rather than an ambiguous timeout:
+// Bun coalesces watch events, and under forty concurrent tests it misses often
+// enough to matter.
 const FAST = { backstopMs: 60_000, debounceMs: 15, quietMs: 15, graceMs: 0 };
 const BACKSTOP = FAST.backstopMs;
 
@@ -661,9 +661,8 @@ test("the manual sentinel reloads even with automatic reloading off", async () =
 
 // Timed against the backstop rather than the wall clock, and given a deadline
 // that survives forty concurrent tests: the claim is that the event drove it,
-// and the backstop being parked at 10s is what makes that provable. A 4s
-// deadline asserted a latency the machine was busy delivering, not a property of
-// the design — two runs in six failed here on an otherwise green suite.
+// and the backstop being parked far beyond the deadline is what makes that
+// provable.
 test("an edit is picked up from the watcher, not the backstop", { concurrency: false }, async () => {
   const server = await sink();
   await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
@@ -762,9 +761,8 @@ test("a reload request does not wait for the backstop once a turn ends", { concu
 
 test("a change held by a window is released when the window closes", async () => {
   // The bug this pins: a change that arrives while the startup grace is still
-  // open used to have nothing to wake it, so it sat until the backstop — half a
-  // minute of a policy that reads as applied and is not. Found by measuring the
-  // real server: an edit landing just after a reload took 30s.
+  // open has nothing to wake it, so it sits until the backstop — half a minute
+  // of a policy that reads as applied and is not.
   const server = await sink();
   await withRoot({ policy: { "allowlist.json": "{}" } }, async (home) => {
     const refresh = internals.startRefresh(

@@ -333,8 +333,7 @@ test("doctor names the CLI it is running from, with its version", () => {
 test("doctor does not report a branch from a repo the package merely sits inside", () => {
   // `git -C PKG` searches upward, so an installed package under a directory that
   // happens to be a repo — /opt/homebrew, or someone's dotfiles — would report
-  // that repo's branch as its own. On a real machine this read as
-  // "on stable" for an npm install that is not a checkout at all.
+  // that repo's branch as its own.
   const m = machine();
   try {
     // A real git repo wrapping a copy of the package, so the upward search has
@@ -422,10 +421,9 @@ test("install repairs a stale registration", () => {
 });
 
 test("install and update remove a stale engine copy from the personal root", () => {
-  // An install from the copy-based design left the engine in the root. It is not
-  // loaded — the registration points at the package — but it outlives the package
-  // and answers to the name someone would look for, so a registering run removes
-  // it. Both the .ts and the .js spelling from the release before that.
+  // A stale engine copy in the root is not loaded — the registration points at
+  // the package — but it outlives the package and answers to the name someone
+  // would look for, so a registering run removes it.
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
