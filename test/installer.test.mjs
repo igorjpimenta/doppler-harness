@@ -649,3 +649,101 @@ test("a package symlink that still resolves is not a failure", () => {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
 });
+
+// --- plugin register / status -----------------------------------------------
+
+test("plugin register writes one loader entry, and re-running changes nothing", () => {
+  const m = machine();
+  const r = run(m, ["plugin", "register", "opencode"]);
+  assert.match(out(r), /registered: /, "first run registers");
+  const first = configOf(m);
+  assert.equal(first.plugin.length, 1);
+  assert.match(first.plugin[0], /dist\/loader\.js$/);
+
+  const again = run(m, ["plugin", "register", "opencode"]);
+  assert.match(out(again), /already registered/, "idempotent");
+  const second = configOf(m);
+  assert.deepEqual(second.plugin, first.plugin, "no duplicate entry");
+});
+
+test("plugin register coexists with the bridge and with the user's own plugins", () => {
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  const withUser = configOf(m);
+  withUser.plugin.push("some-user-plugin");
+  fs.writeFileSync(path.join(m.cfgDir, "opencode.json"), JSON.stringify(withUser, null, 2));
+
+  run(m, ["plugin", "register", "opencode"]);
+  const after = configOf(m);
+  assert.equal(after.plugin.length, 3, "bridge + user's + loader, nothing dropped");
+  assert.ok(after.plugin.includes("some-user-plugin"), "the user's own plugin is untouched");
+});
+
+test("uninstall removes the loader entry as well as the bridge", () => {
+  // Leaving the loader registered would keep loading the root's plugins after
+  // "uninstall", which makes the command a lie.
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  run(m, ["plugin", "register", "opencode"]);
+  const r = run(m, ["uninstall", "opencode"]);
+  assert.match(out(r), /removed: doppler plugin loader entry/);
+  const after = run(m, ["plugin", "status"]);
+  assert.match(out(after), /NOT registered/);
+});
+
+test("plugin status reports what the root holds and what the last session loaded", () => {
+  const m = machine();
+  const home = path.join(m.home, ".doppler");
+  fs.mkdirSync(path.join(home, "plugins"), { recursive: true });
+  fs.writeFileSync(path.join(home, "plugins", "mine.js"), "export const Mine = async () => ({});\n");
+  fs.writeFileSync(path.join(home, "plugins", "never-loaded.js"), "export const X = 1;\n");
+  run(m, ["plugin", "register", "opencode"]);
+
+  const before = run(m, ["plugin", "status"]);
+  assert.match(out(before), /registered/);
+  assert.match(out(before), /mine\.js/, "names the root's plugins");
+  assert.match(out(before), /no opencode session has run/, "honest before a session loads it");
+
+  // What the loader writes at startup is the only source for "did it run".
+  fs.writeFileSync(
+    path.join(home, "plugins.loaded.json"),
+    JSON.stringify({
+      home,
+      at: new Date().toISOString(),
+      plugins: [{ name: "mine", ok: true }],
+    }),
+  );
+  const after = run(m, ["plugin", "status"]);
+  assert.match(out(after), /ok: 1 \(mine\)/);
+  assert.match(out(after), /in the root but not in the last load: never-loaded\.js/,
+    "the dead-plugin question, answered");
+});
+
+test("plugin register names a missing loader rather than writing a dead entry", () => {
+  const m = machine();
+  // A package that never built ships no dist/loader.js; registering a URL to a
+  // missing file is exactly the stale entry doctor then has to catch.
+  const src = fs.readFileSync(DOPPLER, "utf8");
+  const patched = src.replace(
+    /const LOADER = path\.join\(PKG, "dist", "loader\.js"\);/,
+    'const LOADER = path.join(PKG, "dist", "loader-absent.js");',
+  );
+  assert.notEqual(patched, src, "the fixture replaced the loader path");
+  // Written beside the original: the CLI imports ./jsonc.mjs relatively, so a
+  // copy elsewhere would fail to start and the test would pass for the wrong
+  // reason.
+  const patchedBin = path.join(path.dirname(DOPPLER), `doppler-patched-${process.pid}.mjs`);
+  fs.writeFileSync(patchedBin, patched);
+  let r;
+  try {
+    r = spawnSync(process.execPath, [patchedBin, "plugin", "register", "opencode"], {
+      encoding: "utf8",
+      env: { ...process.env, HOME: m.home, DOPPLER_HOME: path.join(m.home, ".doppler"), PATH: m.path },
+    });
+  } finally {
+    fs.rmSync(patchedBin, { force: true });
+  }
+  assert.match(out(r), /no loader at /, "says what is wrong");
+  assert.equal(r.status, 1, "and exits non-zero rather than registering a dead URL");
+  assert.equal(configOf(m).plugin, undefined, "no entry was written into the seeded config");
+});
