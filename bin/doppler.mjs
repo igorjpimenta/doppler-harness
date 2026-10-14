@@ -69,8 +69,7 @@ try {
 // checked as. Both runtimes that load plugins have to load the same file: the
 // TUI's Bun strips types anywhere, but the desktop app's server is Node, and
 // Node refuses to strip types for a file under node_modules — which is where a
-// package install lives. Verified as the reason the app silently loaded no
-// engine while the TUI gated fine.
+// package install lives.
 const BRIDGE = path.join(PKG, "dist", "doppler.js");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
@@ -162,10 +161,8 @@ function writeRootManifest() {
   }, null, 2) + "\n");
 }
 
-// An install from the copy-based design left the engine inside the personal
-// root, and possibly a .js sibling from the release before that. Neither is
-// loaded — the registration points at the package — but both answer to the name
-// someone would look for, so a run that registers removes them.
+// Neither spelling is loaded — the registration points at the package — but both
+// answer to the name someone would look for, so a run that registers removes them.
 function removeStaleBridgeCopies() {
   let removed = 0;
   for (const p of [STALE_BRIDGE, STALE_BRIDGE.replace(/\.ts$/, ".js")]) {
@@ -199,10 +196,8 @@ function readConfig(p) {
 const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 
 // Every spelling the engine has ever been registered under is ours to clear:
-// dist/doppler.js is current; opencode/doppler.ts was the pre-dist bridge, in the
-// package or copied into the personal root by the design before that. An entry
-// left behind under an old spelling would keep pointing at a file a newer
-// install is free to stop shipping, so register() removes them all first.
+// an entry left behind under an older spelling would keep pointing at a file a
+// newer install is free to stop shipping, so register() removes them all first.
 const isDoppler = (literal) => /\/(dist|opencode)\/doppler\.(mjs|ts|js)"?$/.test(literal);
 
 function register() {
