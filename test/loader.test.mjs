@@ -147,8 +147,7 @@ test("object-shaped hooks merge instead of overwriting", async () => {
 test("a PluginModule object export is loaded, not just a bare function", async () => {
   // Every plugin written against the current SDK exports `default { id, server }`,
   // which is not a function. Accepting only the bare-function shape makes a real
-  // root report every one of its plugins as "exports no plugin function" — the
-  // live test found exactly that, on two plugins that load fine in OpenCode.
+  // root report every one of its plugins as "exports no plugin function".
   const r = rootWith();
   const seen = path.join(r.home, "seen.log");
   fs.writeFileSync(

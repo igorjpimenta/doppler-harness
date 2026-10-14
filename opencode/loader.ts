@@ -88,8 +88,7 @@ const OBJECT_HOOKS = new Set(["tool", "auth", "provider"]);
 // docs lead with) and a PluginModule object (`export default { id, server }`,
 // which is what the SDK's PluginModule type is and what every plugin written
 // against the current SDK exports). Only handling the first one loads a
-// directory of plugins as "exports no plugin function" — verified on a real
-// root, where that is what both of its plugins reported.
+// directory of working plugins as "exports no plugin function".
 function asPlugin(value: unknown): Plugin | null {
   if (typeof value === "function") return value as Plugin;
   if (value && typeof value === "object" && typeof (value as { server?: unknown }).server === "function")

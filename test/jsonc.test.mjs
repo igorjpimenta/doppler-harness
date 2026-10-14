@@ -149,8 +149,8 @@ test("matches the array's own indentation style", () => {
 test("removing one element of an inline array leaves the others and the bracket", () => {
   // An inline array is what a hand-written config looks like: `"plugin":
   // ["a", "b"]`. Slicing the removal to line boundaries — correct for an element
-  // alone on its line — ate the rest of the line here, so removing "a" also
-  // removed "b" and the closing bracket, leaving a dangling comma.
+  // alone on its line — eats the rest of the line here: removing "a" would also
+  // remove "b" and the closing bracket, leaving a dangling comma.
   const cfg = '{ "$schema": "x", "plugin": ["file:///p/a.js", "file:///p/b.js"] }\n';
   const span = topLevelValueSpan(cfg, "plugin");
   const after = removeWhere(cfg, span, (l) => l.includes("/a.js"));
