@@ -83,20 +83,30 @@ const CALLBACK_HOOKS = new Set([
 ]);
 const OBJECT_HOOKS = new Set(["tool", "auth", "provider"]);
 
-// A plugin module is a function, or named function exports (docs: "exports one
-// or more plugin functions"). Both are called with the same input; a PluginModule
-// default export wins over a named one of the same name so `export default` is
-// unambiguous.
+// OpenCode accepts two module shapes, and a real plugin directory contains both:
+// a bare plugin function (`export const P = async () => ({...})`, the shape the
+// docs lead with) and a PluginModule object (`export default { id, server }`,
+// which is what the SDK's PluginModule type is and what every plugin written
+// against the current SDK exports). Only handling the first one loads a
+// directory of plugins as "exports no plugin function" — verified on a real
+// root, where that is what both of its plugins reported.
+function asPlugin(value: unknown): Plugin | null {
+  if (typeof value === "function") return value as Plugin;
+  if (value && typeof value === "object" && typeof (value as { server?: unknown }).server === "function")
+    return (value as { server: Plugin }).server;
+  return null;
+}
+
+// Named exports, or a default that wins over the named one of the same name so
+// `export default` is unambiguous.
 function pluginFns(mod: Record<string, unknown>): Array<[string, Plugin]> {
   const out: Array<[string, Plugin]> = [];
-  const seen = new Set<string>();
-  if (typeof mod.default === "function") {
-    out.push(["default", mod.default as Plugin]);
-    seen.add("default");
-  }
+  const dflt = asPlugin(mod.default);
+  if (dflt) out.push(["default", dflt]);
   for (const [name, value] of Object.entries(mod)) {
-    if (name === "default" || typeof value !== "function") continue;
-    out.push([name, value as Plugin]);
+    if (name === "default") continue;
+    const fn = asPlugin(value);
+    if (fn) out.push([name, fn]);
   }
   return out;
 }

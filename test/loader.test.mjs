@@ -144,3 +144,32 @@ test("object-shaped hooks merge instead of overwriting", async () => {
   assert.equal(hooks.tool.gamma.description, "c", "later plugin's own tool is added");
   r.cleanup();
 });
+test("a PluginModule object export is loaded, not just a bare function", async () => {
+  // Every plugin written against the current SDK exports `default { id, server }`,
+  // which is not a function. Accepting only the bare-function shape makes a real
+  // root report every one of its plugins as "exports no plugin function" — the
+  // live test found exactly that, on two plugins that load fine in OpenCode.
+  const r = rootWith();
+  const seen = path.join(r.home, "seen.log");
+  fs.writeFileSync(
+    path.join(r.dir, "module.js"),
+    `export default {
+  id: "module-shaped",
+  server: async () => ({
+    event: async ({ event }) => {
+      if (event.type !== "test.ping") return;
+      const fs = await import("node:fs");
+      fs.appendFileSync(${JSON.stringify(seen)}, "module-shaped\\n");
+    },
+  }),
+};
+`,
+  );
+
+  const hooks = await loadHooks();
+  await hooks.event({ event: { type: "test.ping" } });
+  assert.equal(fs.readFileSync(seen, "utf8").trim(), "module-shaped", "the object export's hooks run");
+  const report = JSON.parse(fs.readFileSync(path.join(r.home, "plugins.loaded.json"), "utf8"));
+  assert.equal(report.plugins[0].ok, true, "and it is reported as loaded, not skipped");
+  r.cleanup();
+});
