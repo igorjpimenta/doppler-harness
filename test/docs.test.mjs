@@ -1,18 +1,8 @@
-// The README is the only file a reader meets before they decide whether this is
-// the tool they want, so a version in it is a promise about what they will get.
-// That promise rots the moment a release ships and nobody remembers the number,
-// and it fails silently: a stale pin reads exactly like a correct one, and the
-// reader who copies it installs something other than what the docs described.
-//
-// So the README carries no version at all. `<version>` is the placeholder, and
-// the releases page is named as the place the value comes from. This pins that
-// as a test rather than a convention, because a convention is a comment and a
-// comment rots exactly the way the pin did.
-//
-// This is deliberately blunt: no version-shaped literal anywhere in the README,
-// not even an old one. An example that has to be exempt is an example that will
-// be read as current, and the fix for that is a placeholder rather than an
-// allowlist entry.
+// A version in the README is a promise about what a reader will get, and it rots
+// silently: a pin left at an older release reads exactly like a correct one.
+// Deliberately blunt — no version-shaped literal at all, not even an old one —
+// because an example that needs exempting is an example someone will read as
+// current, and a placeholder beats an allowlist entry.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
