@@ -117,7 +117,12 @@ async function hasSameIdPlugin() {
   return false;
 }
 
-const OC_CONFIG_DIR = path.join(os.homedir(), ".config", "opencode");
+// Resolve the config dir the way OpenCode does — XDG_CONFIG_HOME when set,
+// else the default. The bridge's globalAgentsMd resolves the same way; the
+// installer must agree, or the registration lands where OpenCode never
+// reads and the bridge silently never loads.
+const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+const OC_CONFIG_DIR = path.join(configHome, "opencode");
 
 // The file the bridge watches for a manual reload request. Read as a counter
 // rather than a mtime so two requests in the same filesystem tick are still two.

@@ -557,6 +557,30 @@ test("update re-registers the package's own bridge, so a move is self-healing", 
   }
 });
 
+test("the config dir follows XDG_CONFIG_HOME when it is set", () => {
+  // OpenCode reads its config from $XDG_CONFIG_HOME/opencode when the
+  // variable is set, so a registration written to ~/.config/opencode lands
+  // where OpenCode never looks and the bridge silently never loads. The
+  // installer must resolve the same dir the bridge's globalAgentsMd does.
+  const m = machine();
+  const xdg = path.join(m.home, ".xdg");
+  fs.mkdirSync(xdg, { recursive: true });
+  try {
+    const r = run(m, ["install", "opencode"], { env: { XDG_CONFIG_HOME: xdg } });
+    assert.equal(r.status, 0, out(r));
+    // The registration lands in the XDG dir, not the default one.
+    const xdgCfg = path.join(xdg, "opencode", "opencode.json");
+    assert.ok(fs.existsSync(xdgCfg), "the config is written under XDG_CONFIG_HOME");
+    const written = JSON.parse(fs.readFileSync(xdgCfg, "utf8"));
+    assert.match(written.plugin[0], /dist\/doppler\.js$/, "the bridge is registered in the XDG dir");
+    // The default dir is left untouched — no second registration.
+    const def = fs.readFileSync(path.join(m.cfgDir, "opencode.json"), "utf8");
+    assert.ok(!def.includes("dist/doppler.js"), "the default ~/.config dir is not written");
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("reload asks a running session, and says when a turn is not interrupted", () => {
   // The request is a file, not a call: a desktop-app session always runs the
   // server with a password, so an external process cannot reach it, and storing a
