@@ -266,6 +266,45 @@ test("an identical pattern in both tiers resolves to the ask", async () => {
   });
 });
 
+test("a deny out-ranks an ask, and both out-rank an allow", async () => {
+  // Tier order is allow, ask, deny: last-match-wins means the deny is the
+  // final word on any overlap. This is the engine's own deny — enforced in
+  // auto-approve mode — not a hook deny, so it holds even with guards off.
+  await withRoot({
+    policy: {
+      "allowlist.json": JSON.stringify({
+        allow: [{ pattern: "*git push*" }],
+        ask: [{ pattern: "*git push --force*" }],
+        deny: [{ pattern: "*git push --force*" }],
+      }),
+    },
+  }, async (_, plugin) => {
+    const cfg = { permission: {} };
+    await plugin.config(cfg);
+    assert.deepEqual(Object.keys(cfg.permission.bash), [
+      "*git push*",
+      "*git push --force*",
+    ]);
+    assert.equal(cfg.permission.bash["*git push*"], "allow");
+    assert.equal(cfg.permission.bash["*git push --force*"], "deny");
+  });
+});
+
+test("a malformed deny entry is skipped, not fatal", async () => {
+  await withRoot({
+    policy: {
+      "allowlist.json": JSON.stringify({
+        deny: [{ pattern: "" }, { nope: true }, "*ok*"],
+        ask: [{ pattern: "*git push*" }],
+      }),
+    },
+  }, async (_, plugin) => {
+    const cfg = { permission: {} };
+    await plugin.config(cfg);
+    assert.deepEqual(cfg.permission.bash, { "*git push*": "ask" });
+  });
+});
+
 test("compiled rules land after the user's own, so they win", async () => {
   // OpenCode takes the LAST matching pattern. A user who has globally allowed
   // bash must still get these asks, which only holds if doppler appends.
