@@ -145,3 +145,27 @@ test("matches the array's own indentation style", () => {
     assert.ok(out.includes(`${indent}${E}\n`), JSON.stringify(out));
   }
 });
+
+test("removing one element of an inline array leaves the others and the bracket", () => {
+  // An inline array is what a hand-written config looks like: `"plugin":
+  // ["a", "b"]`. Slicing the removal to line boundaries — correct for an element
+  // alone on its line — eats the rest of the line here: removing "a" would also
+  // remove "b" and the closing bracket, leaving a dangling comma.
+  const cfg = '{ "$schema": "x", "plugin": ["file:///p/a.js", "file:///p/b.js"] }\n';
+  const span = topLevelValueSpan(cfg, "plugin");
+  const after = removeWhere(cfg, span, (l) => l.includes("/a.js"));
+  assert.deepEqual(JSON.parse(after).plugin, ["file:///p/b.js"], "the neighbour and the bracket survive");
+  assert.ok(after.trimEnd().endsWith("}"), "still parseable, no dangling comma");
+});
+
+test("removing the last element of an inline array is local too", () => {
+  const cfg = '{ "plugin": ["file:///p/a.js", "file:///p/b.js"] }\n';
+  const after = removeWhere(cfg, topLevelValueSpan(cfg, "plugin"), (l) => l.includes("/b.js"));
+  assert.deepEqual(JSON.parse(after).plugin, ["file:///p/a.js"]);
+});
+
+test("a line-per-element array still removes whole lines", () => {
+  const cfg = '{\n  "plugin": [\n    "file:///p/a.js",\n    "file:///p/b.js"\n  ]\n}\n';
+  const after = removeWhere(cfg, topLevelValueSpan(cfg, "plugin"), (l) => l.includes("/a.js"));
+  assert.deepEqual(JSON.parse(after).plugin, ["file:///p/b.js"], "formatting of the surviving line kept");
+});

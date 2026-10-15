@@ -73,6 +73,18 @@ try {
 const BRIDGE = path.join(PKG, "dist", "doppler.js");
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
+// The plugin loader, same rule as the bridge: built JavaScript in this package,
+// registered by absolute file URL, read in place, never copied into the root —
+// removal has to remove, and a copy under the root would outlive the package.
+// It is what makes the personal root's own plugins loadable at all: OpenCode
+// builds its plugin list from the config file and the plugin directories before
+// any plugin runs, so no plugin (the bridge included) can add to that list, and
+// the root cannot occupy any of those locations without a copy.
+const LOADER = path.join(PKG, "dist", "loader.js");
+// What the loader wrote about the last session's load, so `doppler plugin
+// status` can answer the question the config cannot: did anything actually run?
+const PLUGIN_REPORT = path.join(HOME, "plugins.loaded.json");
+
 // The bridge's declared id (opencode/doppler.ts exports it as a PluginModule).
 // OpenCode loads every registered plugin and does not dedup by id, so "doppler
 // is the secondary option" is this installer's check, not the harness's: before
@@ -224,6 +236,101 @@ function unregister() {
   return { path: p, changed: true };
 }
 
+// --- plugins ---------------------------------------------------------------
+//
+// The root's plugins load through one registered entry that discovers them at
+// startup, so registering is a single line that never has to change when the
+// root gains or loses a plugin file. Same splice, same idempotency, same "only
+// ever appends" rule as the bridge: every spelling of the loader entry is ours
+// to clear before writing, so a root that moves cannot leave a stale URL behind.
+
+const loaderEntry = () => JSON.stringify(pathToFileURL(LOADER).href);
+const isLoader = (literal) => /\/dist\/loader\.js"?$/.test(literal);
+
+function registerLoader() {
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const cleared = removeWhere(before, topLevelValueSpan(before, "plugin"), isLoader);
+  const after = insertElement(cleared, topLevelValueSpan(cleared, "plugin"), "plugin", loaderEntry());
+  if (after === before) return { path: p, changed: false };
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
+// Files the loader would pick up: the same filter it applies, so `status`
+// describes what will really load rather than what the directory happens to
+// contain.
+function rootPluginFiles() {
+  const dir = path.join(HOME, "plugins");
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((n) => !n.startsWith(".") && !n.startsWith("__tests__"))
+      .filter((n) => [".js", ".mjs", ".ts"].includes(path.extname(n)))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+async function pluginRegister() {
+  if (!fs.existsSync(LOADER)) {
+    console.log(`no loader at ${LOADER} — this package does not ship one.`);
+    console.log("Run `npm run build` in a checkout, or install a released package.");
+    process.exitCode = 1;
+    return;
+  }
+  const r = registerLoader();
+  const files = rootPluginFiles();
+  console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${loaderEntry()}`);
+  console.log(`root: ${HOME}`);
+  console.log(`plugins in the root: ${files.length ? files.join(", ") : "(none yet)"}`);
+  if (files.length) console.log("they load on the next opencode start — nothing to re-install when you add one.");
+}
+
+function pluginStatus() {
+  const cfg = readConfig(ocConfigPath());
+  const span = topLevelValueSpan(cfg, "plugin");
+  const registered = span ? /\/dist\/loader\.js/.test(cfg.slice(span.start, span.end)) : false;
+
+  console.log(`loader: ${registered ? "registered" : "NOT registered"} — ${LOADER}`);
+  console.log(`  loader file: ${fs.existsSync(LOADER) ? "present" : "MISSING (package not built?)"}`);
+  console.log(`  config: ${ocConfigPath()}`);
+
+  const files = rootPluginFiles();
+  console.log(`root: ${HOME}`);
+  console.log(`  plugins/: ${files.length ? `${files.length} file(s)` : "(empty or absent)"}`);
+  for (const f of files) console.log(`    - ${f}`);
+
+  let report = null;
+  try {
+    report = JSON.parse(fs.readFileSync(PLUGIN_REPORT, "utf8"));
+  } catch {
+    // no session has loaded the loader yet
+  }
+  if (!report) {
+    console.log("last load: no report — no opencode session has run with the loader registered.");
+    return;
+  }
+  const at = report.at ? new Date(report.at).toLocaleString() : "unknown";
+  console.log(`last load: ${at}`);
+  const bad = (report.plugins ?? []).filter((p) => !p.ok);
+  const good = (report.plugins ?? []).filter((p) => p.ok);
+  console.log(`  ok: ${good.length}${good.length ? ` (${good.map((p) => p.name).join(", ")})` : ""}`);
+  if (bad.length) {
+    console.log(`  skipped: ${bad.length}`);
+    for (const p of bad) console.log(`    - ${p.name}: ${p.error}`);
+  }
+  // The question this command exists for: a file in the root that never loaded.
+  const named = new Set((report.plugins ?? []).map((p) => p.name));
+  const orphans = files.filter((f) => !named.has(f.replace(/\.[cm]?[jt]s$/, "")));
+  if (orphans.length) {
+    console.log(`  in the root but not in the last load: ${orphans.join(", ")}`);
+    console.log("    a plugin added after that session loads on the next start — if it is still missing then, it exports no plugin function.");
+  }
+}
+
 // Resolved lazily, and allowed to be absent: `doctor` and `version` have to work
 // precisely when the install is broken, so a missing CLI cannot exit(1) before
 // they get a chance to explain it.
@@ -326,9 +433,25 @@ function reload() {
   }
 }
 
+function unregisterLoader() {
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const span = topLevelValueSpan(before, "plugin");
+  if (!span) return { path: p, changed: false };
+  const after = removeWhere(before, span, isLoader);
+  if (after === before) return { path: p, changed: false };
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
 function uninstallOpencode() {
   const r = unregister();
   console.log(`${r.changed ? "removed" : "not present"}: doppler bridge entry in ${r.path}`);
+  // The loader is registered by the same installer into the same array, so
+  // leaving it behind would keep loading the personal root's plugins after
+  // "uninstall" — the one outcome that makes the command a lie.
+  const l = unregisterLoader();
+  console.log(`${l.changed ? "removed" : "not present"}: doppler plugin loader entry in ${l.path}`);
   console.log(`left in place: ${path.join(HOME, "hooks")} and ${path.join(HOME, "policy")} — your files.`);
   console.log(`delete ${HOME} to remove the personal root entirely.`);
 }
@@ -578,21 +701,27 @@ bad(
 
 const cmd = process.argv[2] ?? "help";
 const target = process.argv[3];
-const USAGE = "usage: doppler <install|uninstall> opencode | update | reload | doctor | version";
+const USAGE = "usage: doppler <install|uninstall> opencode | update | reload | doctor | version\n" +
+  "       doppler plugin register opencode   # load the personal root's plugins/*.js\n" +
+  "       doppler plugin status               # registered? loaded? skipped?";
 if (cmd === "install" && target === "opencode") await installOpencode();
 else if (cmd === "uninstall" && target === "opencode") uninstallOpencode();
 else if (cmd === "update") await update();
 else if (cmd === "reload") reload();
 else if (cmd === "doctor") doctor();
+else if (cmd === "plugin" && target === "register") await pluginRegister();
+else if (cmd === "plugin" && target === "status") pluginStatus();
 else if (cmd === "version") console.log(packageJson().version);
 else {
   console.log(USAGE);
   // A name we do not serve is the case worth answering properly: the usage line
   // alone reads as a typo, when the honest answer is that the harness is not
   // supported yet and the work is in one commit away.
-  if (target && target !== "opencode") {
+  if (cmd === "plugin") {
+    console.log("\nverbs: register opencode · status");
+  } else if (target && target !== "opencode") {
     console.log(`\nopencode is the only supported harness right now. ${target} is not wired.`);
     console.log("See AGENTS.md for what a new one needs — it is a bridge, not a fork.");
   }
-  process.exit(cmd === "help" ? 0 : 1);
+  process.exit(cmd === "help" || cmd === "plugin" ? 0 : 1);
 }

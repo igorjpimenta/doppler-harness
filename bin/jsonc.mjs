@@ -170,7 +170,13 @@ function removeOne(text, at, literal) {
 
   const after = skipTrivia(text, e0);
   if (text[after] === ",") {
-    return text.slice(0, ls) + text.slice(pastNewline(text, after));
+    // Local removal, not a line removal: this element is NOT alone on its line
+    // (that case returned above), so the line holds the rest of the array and
+    // the closing bracket. Slicing to the line start here deletes every element
+    // after this one, and the bracket with them — an inline
+    // `"plugin": ["a", "b"]` loses "b" when "a" is removed.
+    const next = skipTrivia(text, after + 1);
+    return text.slice(0, at) + text.slice(next);
   }
   let back = at;
   while (back > 0 && WS.test(text[back - 1])) back -= 1;
