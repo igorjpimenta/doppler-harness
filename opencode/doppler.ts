@@ -247,9 +247,16 @@ function compiledPermission() {
     if (typeof t === "string" && t) permission[t] = "allow";
   }
 
-  // ask before allow, so on an overlap the ask is the one the user has to see:
-  // a broad allow must not swallow a narrow ask.
+  // OpenCode evaluates the LAST matching pattern, so within the map the tiers
+  // are emitted allow first and ask last: on an overlap — above all a broad
+  // allow like "*" against a narrow ask — the ask has to be the later entry,
+  // or the allow silently swallows it. The same holds for an identical pattern
+  // listed in both tiers, which therefore resolves to the ask.
   const bash: Record<string, string> = {};
+  for (const r of rules.allow ?? []) {
+    if (typeof r?.pattern !== "string" || !r.pattern) continue;
+    bash[r.pattern] = "allow";
+  }
   for (const r of rules.ask ?? []) {
     if (typeof r?.pattern !== "string" || !r.pattern) continue;
     bash[r.pattern] = "ask";
@@ -257,10 +264,6 @@ function compiledPermission() {
   // A hook's declared asks join the same tier for the same reason: they are the
   // user being asked, so they have to reach the user as a prompt.
   for (const p of declaredAskPatterns()) bash[p] = "ask";
-  for (const r of rules.allow ?? []) {
-    if (typeof r?.pattern !== "string" || !r.pattern) continue;
-    if (bash[r.pattern] === undefined) bash[r.pattern] = "allow";
-  }
   if (Object.keys(bash).length) permission.bash = bash;
 
   return Object.keys(permission).length ? permission : null;
