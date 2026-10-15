@@ -107,10 +107,9 @@ async function hasSameIdPlugin() {
 }
 
 // Resolve the config dir the way OpenCode does — XDG_CONFIG_HOME when set,
-// else the default — because a path pinned to ~/.config writes (and reads) a
-// file OpenCode is not reading on an XDG setup. The bridge's globalAgentsMd
-// resolves the same way; the installer must agree with it or the registration
-// lands where OpenCode never looks and the bridge silently never loads.
+// else the default. The bridge's globalAgentsMd resolves the same way; the
+// installer must agree, or the registration lands where OpenCode never
+// reads and the bridge silently never loads.
 const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 const OC_CONFIG_DIR = path.join(configHome, "opencode");
 
