@@ -23,18 +23,29 @@ date, because a version is a date plus a tiebreaker, not an ordering.
 3. Tag the release commit — `git tag <version> -m "<version> — <summary>"` —
    and push the tag.
 4. `gh release create <version>` with the title and notes below.
-5. `npm pack`, then attach the tarball as a release asset:
-   `gh release upload <version> <pkg>-<version>.tgz`
+5. `npm pack`, then attach the tarball twice — once named for the version, once
+   under the stable alias — and upload both:
+   ```bash
+   gh release upload <version> <pkg>-<version>.tgz
+   cp <pkg>-<version>.tgz igorjpimenta-doppler-harness.tgz
+   gh release upload <version> igorjpimenta-doppler-harness.tgz
+   ```
 
-   **Not optional.** The documented install is the git URL, and it needs
-   `--install-links=true` to work at all: npm defaults `install-links` to
-   `false`, so a global install from a git URL leaves a package directory that
-   is a symlink into npm's temporary cache pointing at a clone npm has already
-   deleted — `doppler` then vanishes from `PATH`. It is npm's own default,
-   unchanged across npm 8 through 11, and nothing in the package can set it
-   (npm/cli#6984). The asset is the flag-free, git-free install, and it is also
-   what an install test has to exercise, since that is what the flag-free reader
-   gets.
+   **Not optional.** The version-named asset is the flag-free, git-free install,
+   and it is also what an install test has to exercise, since that is what the
+   flag-free reader gets. The alias asset is what makes the versionless
+   `releases/latest/download/igorjpimenta-doppler-harness.tgz` URL work — GitHub
+   resolves that URL against the asset NAME, so an alias-less release silently
+   keeps serving the previous release's tarball, and `doppler update` would then
+   offer a stale engine as the newest one. A release without the alias is
+   invisible to every default install.
+
+   The git-URL install needs `--install-links=true` to work at all: npm defaults
+   `install-links` to `false`, so a global install from a git URL leaves a
+   package directory that is a symlink into npm's temporary cache pointing at a
+   clone npm has already deleted — `doppler` then vanishes from `PATH`. It is
+   npm's own default, unchanged across npm 8 through 11, and nothing in the
+   package can set it (npm/cli#6984).
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.

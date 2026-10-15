@@ -341,7 +341,7 @@ test("doctor does not report a branch from a repo the package merely sits inside
     const outer = path.join(m.home, "outer");
     const pkg = path.join(outer, "node_modules", "pkg");
     fs.mkdirSync(path.join(pkg, "bin"), { recursive: true });
-    for (const f of ["doppler.mjs", "jsonc.mjs"]) {
+    for (const f of ["doppler.mjs", "jsonc.mjs", "update-core.mjs"]) {
       fs.copyFileSync(path.join(ROOT, "bin", f), path.join(pkg, "bin", f));
     }
     fs.cpSync(path.join(ROOT, "opencode"), path.join(pkg, "opencode"), { recursive: true });

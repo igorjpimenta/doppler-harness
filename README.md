@@ -13,6 +13,19 @@ writing a bridge, not a second implementation.
 
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
+The versionless URL always serves the newest release's tarball — no tag to look
+up, and no `--install-links` caveat, because it is a plain tarball and not a git
+URL:
+
+```bash
+npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
+doppler install opencode
+```
+
+To pin, name the release in the URL
+(`…/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz`) or
+install from the git ref:
+
 ```bash
 npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
 doppler install opencode
@@ -73,7 +86,8 @@ silent at runtime; doctor is where they are not.
 
 ```
 doppler install opencode      # scaffold the personal root, register the bridge, verify
-doppler update                # refresh the engine, re-register (and pull, under a clone install)
+doppler update                # engine: latest release (or a pinned <tag>); root: pull, under a clone install
+doppler update --force        # install even when the decision says no (checkouts, same-base rebuilds)
 doppler reload                # ask a running OpenCode to re-read the personal root now
 doppler doctor                # check that it is actually working
 doppler uninstall opencode    # remove the bridge entry; your files stay
