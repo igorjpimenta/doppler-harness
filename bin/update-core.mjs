@@ -9,11 +9,16 @@ export function parseTag(s) {
   return { y: +m[1], m: +m[2], d: +m[3], n: m[4] ? +m[4] : 0 };
 }
 
-// Total order over tags of one base: the plain tag outranks its "-N" re-releases
-// (it is the released form), and higher -N outranks lower.
+// Total order over tags: within a date base, higher -N is later — a "-1" is a
+// second release of its day, not an earlier draft of it. Semver sorts a suffix
+// below the base, and GitHub's tag listing inherits that reading; neither is the
+// order here.
+//
+// This orders the newest-installable walk only. The upgrade decision is
+// isNewerRelease, which compares date bases alone.
 export function newerTag(a, b) {
-  const ka = [a.y, a.m, a.d, a.n === 0 ? Infinity : a.n];
-  const kb = [b.y, b.m, b.d, b.n === 0 ? Infinity : b.n];
+  const ka = [a.y, a.m, a.d, a.n];
+  const kb = [b.y, b.m, b.d, b.n];
   for (let i = 0; i < 4; i++) {
     if (ka[i] !== kb[i]) return ka[i] > kb[i] ? 1 : -1;
   }
