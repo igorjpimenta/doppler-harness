@@ -27,8 +27,8 @@ test("tags order numerically, not lexically", () => {
   // Lexical order would rank "2026.10.9" above "2026.10.14".
   assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.9")), 1);
   assert.equal(newerTag(parseTag("2026.9.29"), parseTag("2026.10.8")), -1);
-  // The plain release outranks its own "-N" re-releases; higher N outranks lower.
-  assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.14-1")), 1);
+  // Within a base, higher -N is later: -2 is the third release of the day.
+  assert.equal(newerTag(parseTag("2026.10.14-1"), parseTag("2026.10.14")), 1);
   assert.equal(newerTag(parseTag("2026.10.14-2"), parseTag("2026.10.14-1")), 1);
   assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.14")), 0);
 });
