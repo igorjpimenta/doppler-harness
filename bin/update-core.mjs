@@ -3,10 +3,9 @@
 // because string order ranks "2026.10.9" above "2026.10.14" and would silently
 // pin machines to October 9th forever.
 //
-// A bare "-N" is also accepted: that was this project's earlier spelling for a
-// same-day re-release, and those tags are still in the wild and still pinnable.
-// Both spellings mean the same thing here — a suffixed tag is a pre-release of
-// its base — so they share one lane rather than each carrying their own rule.
+// A bare "-N" is also accepted and lands in the same lane: those tags are out in
+// the wild and still pinnable, and a suffixed tag means a pre-release of its base
+// either way — so both spellings share one rule rather than carrying their own.
 
 export function parseTag(s) {
   const t = String(s).trim();
@@ -24,7 +23,8 @@ export function parseTag(s) {
 // the flag and the version string now say the same thing.
 //
 // This orders the newest-installable walk only. The upgrade decision is
-// isNewerRelease, which compares date bases alone.
+// isNewerRelease, which is stricter: it refuses pre-releases and promotes off
+// one.
 export function newerTag(a, b) {
   const ka = [a.y, a.m, a.d, a.n === 0 ? Infinity : a.n];
   const kb = [b.y, b.m, b.d, b.n === 0 ? Infinity : b.n];

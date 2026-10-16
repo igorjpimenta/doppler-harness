@@ -17,7 +17,7 @@ import {
 test("parseTag accepts stable, -beta.N, and the legacy bare -N", () => {
   assert.deepEqual(parseTag("2026.10.15"), { y: 2026, m: 10, d: 15, n: 0 });
   assert.deepEqual(parseTag("2026.10.15-beta.2"), { y: 2026, m: 10, d: 15, n: 2 });
-  // The pre-release lane's spelling changed; the old tags stay pinnable.
+  // The old same-day spelling stays parseable: those tags are still pinnable.
   assert.deepEqual(parseTag("2026.10.15-1"), { y: 2026, m: 10, d: 15, n: 1 });
   assert.equal(parseTag("v2026.10.15"), null);
   assert.equal(parseTag("2026-10-15"), null);
