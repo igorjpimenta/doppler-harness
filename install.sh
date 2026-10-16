@@ -30,17 +30,10 @@ fi
 
 say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
 
-  # The verbs are `install`/`uninstall` <harness>, so a bare harness name is
-  # expanded to `install <name>` rather than forwarded and rejected as unknown.
-  case "${1:-}" in
-    install|uninstall|update|doctor|version|"")
-      exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
-      ;;
-    *)
-      exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
-      ;;
-  esac
-
+# Before the exec below, not after: exec replaces this shell, so guidance placed
+# after the case statement never reached anyone. This is the first output after
+# the version line a fresh installer sees, and the only chance to tell them the
+# command that connects a harness.
 cat <<'EOF'
 
 Connect a harness (restart it afterwards):
@@ -50,17 +43,31 @@ Connect a harness (restart it afterwards):
 Then write your first hook — nothing is enforced until you do. Copy
 policy/hook.example.mjs into ~/.doppler/hooks/ and edit it.
 
-Or install the CLI with npm from the git URL. The --install-links=true flag is
-required, not decoration: npm defaults install-links to false, so the package
-would otherwise be left as a symlink into a temporary cache npm has already
-deleted, and doppler never lands on PATH. See npm/cli#6984.
+Or install the CLI from npm — no version in the command, it resolves to the
+newest release:
 
-  npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
+  npm install -g @igorjpimenta/doppler-harness
   doppler install opencode
 
-Every release also carries a tarball asset, which needs neither the flag nor git:
+Prefer a source install? Every release also carries a tarball asset, which
+needs neither git nor the registry. This versionless URL is that release:
+
+  npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
+
+To pin a release, name it in the URL:
 
   npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
 
 Docs: https://github.com/igorjpimenta/doppler-harness
 EOF
+
+# The verbs are `install`/`uninstall` <harness>, so a bare harness name is
+# expanded to `install <name>` rather than forwarded and rejected as unknown.
+case "${1:-}" in
+  install|uninstall|update|doctor|version|"")
+    exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
+    ;;
+  *)
+    exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
+    ;;
+esac
