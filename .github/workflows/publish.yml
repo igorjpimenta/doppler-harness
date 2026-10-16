@@ -1,0 +1,89 @@
+# Publishes a release to npm from the tag it names, and refuses to publish a
+# version the registry has already seen.
+#
+# Auth is Trusted Publishing: npm exchanges this job's OIDC identity for a
+# short-lived publish token, scoped to this repo and this workflow. There is no
+# token to store, leak, or rotate, and npm's 2FA on the owner account stays in
+# force — which matters, because a granular token that bypasses 2FA can publish
+# but is refused for unpublish outright.
+#
+# Requires, once, on npmjs.com under the package: Access → Trusted Publisher →
+# repository igorjpimenta/doppler-harness, workflow publish.yml. Optional: an
+# environment name, which then also has to be selected here.
+name: publish
+
+on:
+  # A published GitHub Release is the human signal that a version is ready.
+  release:
+    types: [published]
+  # Backfilling a historical tag: workflow_dispatch with the tag as input.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. 2026.10.16 or 2026.10.17-beta.1"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Name this job what it is publishing
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.event.release.tag_name }}"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $TAG does not match package.json $VERSION — the tag is the contract; bump them together"
+            exit 1
+          fi
+          # The dist-tag follows the version's role, never the calendar: a
+          # suffixed version is a pre-release and must not take `latest`.
+          case "$VERSION" in
+            *-*) DIST_TAG="beta" ;;
+            *)   DIST_TAG="latest" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+
+      # A version the registry has ever held — published, or published and
+      # unpublished — is permanently unusable, and npm's rejection arrives only
+      # AFTER the upload. `time` lists those tombstones; `versions` omits them,
+      # so checking only the latter is how a rename-then-unpublish sequence
+      # walks into a version that can never be published.
+      - name: Refuse a version the registry has already seen
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.meta.outputs.version }}"
+          if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
+            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
+            exit 1
+          fi
+          echo "$PKG@$VERSION is unused on the registry"
+
+      - run: npm ci
+      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+
+      - name: Record what is now the default install
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.meta.outputs.version }}"
+          DIST_TAG="${{ steps.meta.outputs.dist-tag }}"
+          echo "published $PKG@$VERSION under $DIST_TAG"
+          npm view "$PKG" dist-tags --json
+          npm view "$PKG" versions --json

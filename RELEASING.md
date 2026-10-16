@@ -30,6 +30,21 @@ A `-beta.N` that turns out sound becomes the plain `YYYY.M.D` it was rehearsing
 — same date, no suffix, stable — and the tag that carried the beta keeps its
 place in history for anyone who pinned it.
 
+## Tag names and npm versions are not the same names
+
+A tag is the contract for `github:…#<tag>` and for a release's asset URLs, so a
+tag is never renamed. The npm version is chosen independently — it has to be a
+name the registry has never seen. Those two rules collide exactly once, when a
+`-N` tag is republished under the `-beta.N` spelling: the registry forbids
+reusing a version it has ever held, including one that was unpublished, so the
+number can never go back.
+
+The npm versions are the installable record. GitHub carries the stable releases.
+
+Check a name against both before publishing: `npm view <pkg> time` lists
+tombstones that `npm view <pkg> versions` omits, and a tombstone is what makes
+`npm publish` answer *Cannot publish over previously published version*.
+
 ## Order of operations
 
 1. Merge the PR. `main` receives code only this way.
