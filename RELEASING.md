@@ -44,14 +44,21 @@ follows. Every `-beta.N` below was published from the tag beside it, with the
 version stamped in; the tombstones are versions the registry will never accept
 again.
 
-| git tag | npm version | on npm |
+**GitHub now carries only the three stable tags** — `2026.10.11`, `2026.10.14`,
+`2026.10.16`. The ten others were deleted: they were superseded, two of them
+were TypeScript-only, and keeping spent names on the tag page made the beta
+lane impossible to read. The map below is therefore **historical** — it records
+what each tag was and which npm version it became, not what `git ls-remote`
+shows today. The npm versions are untouched and remain the installable record.
+
+| git tag (historical) | npm version | on npm |
 |---|---|---|
 | `2026.9.29` | `2026.9.29-beta.1` | yes |
 | `2026.9.29-1` · `-2` · `-3` | — | never: their bridge is TypeScript, which Node cannot run |
 | `2026.10.5` | `2026.10.5-beta.1` | yes |
 | `2026.10.7` | `2026.10.7-beta.1` | yes |
 | `2026.10.8` | `2026.10.8-beta.1` | yes |
-| `2026.10.11` · `2026.10.14` · `2026.10.16` | same | yes, `latest` |
+| `2026.10.11` · `2026.10.14` · `2026.10.16` | same | **still on GitHub**, `latest` on `2026.10.16` |
 | `2026.10.15` | `2026.10.15-beta.4` | yes |
 | `2026.10.15-1` | `2026.10.15-beta.5` | yes |
 | `2026.10.15-2` | `2026.10.15-beta.6` | yes — the build with the loader fix |
