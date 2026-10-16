@@ -14,36 +14,46 @@ import {
   tagsFromLsRemote,
 } from "../bin/update-core.mjs";
 
-test("parseTag accepts release and re-release spellings, rejects everything else", () => {
+test("parseTag accepts stable, -beta.N, and the legacy bare -N", () => {
   assert.deepEqual(parseTag("2026.10.15"), { y: 2026, m: 10, d: 15, n: 0 });
-  assert.deepEqual(parseTag("2026.10.15-2"), { y: 2026, m: 10, d: 15, n: 2 });
+  assert.deepEqual(parseTag("2026.10.15-beta.2"), { y: 2026, m: 10, d: 15, n: 2 });
+  // The old same-day spelling stays parseable: those tags are still pinnable.
+  assert.deepEqual(parseTag("2026.10.15-1"), { y: 2026, m: 10, d: 15, n: 1 });
   assert.equal(parseTag("v2026.10.15"), null);
   assert.equal(parseTag("2026-10-15"), null);
   assert.equal(parseTag("main"), null);
   assert.equal(parseTag("2026.10"), null);
+  // A suffix without its lane marker is not a version this project publishes.
+  assert.equal(parseTag("2026.10.15-beta"), null);
 });
 
-test("tags order numerically, not lexically", () => {
+test("tags order numerically, and a pre-release precedes the stable it previews", () => {
   // Lexical order would rank "2026.10.9" above "2026.10.14".
   assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.9")), 1);
   assert.equal(newerTag(parseTag("2026.9.29"), parseTag("2026.10.8")), -1);
-  // Within a base, higher -N is later: -2 is the third release of the day.
-  assert.equal(newerTag(parseTag("2026.10.14-1"), parseTag("2026.10.14")), 1);
-  assert.equal(newerTag(parseTag("2026.10.14-2"), parseTag("2026.10.14-1")), 1);
+  // The stable outranks every pre-release of its own day, and higher -beta.N
+  // outranks lower — the same shape semver gives, now that the version string
+  // and the release flag agree about what a suffix means.
+  assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.14-beta.1")), 1);
+  assert.equal(newerTag(parseTag("2026.10.14-beta.2"), parseTag("2026.10.14-beta.1")), 1);
   assert.equal(newerTag(parseTag("2026.10.14"), parseTag("2026.10.14")), 0);
 });
 
-test("the downgrade trap: a same-base re-release is never an upgrade", () => {
-  // "2026.10.14-1" is a tarball test build carrying code the released
-  // "2026.10.14" does not have (it predates the loader). Auto-"upgrading" it to
-  // the release deletes dist/loader.js out from under the registered config.
-  assert.equal(isNewerRelease("2026.10.14", "2026.10.14-1"), false);
-  // The other direction is equally unsafe to automate.
-  assert.equal(isNewerRelease("2026.10.14-2", "2026.10.14"), false);
-  // A new date base is the only thing that qualifies.
+test("the upgrade decision: stables only, with promotion off a pre-release", () => {
+  // A pre-release never auto-installs — not over a stable, not over an older
+  // day. Pin it or pass --force.
+  assert.equal(isNewerRelease("2026.10.17-beta.1", "2026.10.16"), false);
+  assert.equal(isNewerRelease("2026.10.14-beta.1", "2026.10.14"), false);
+  assert.equal(isNewerRelease("2026.10.15-2", "2026.10.15"), false);
+  // A newer day's stable is the only automatic upgrade.
+  assert.equal(isNewerRelease("2026.10.15", "2026.10.14"), true);
   assert.equal(isNewerRelease("2026.10.15", "2026.10.14-1"), true);
   assert.equal(isNewerRelease("2026.10.15", "2026.10.15"), false);
   assert.equal(isNewerRelease("2026.10.14", "2026.10.15"), false);
+  // Already on a pre-release of the day: its stable is an upgrade, which is what
+  // publishing the stable is for.
+  assert.equal(isNewerRelease("2026.10.15", "2026.10.15-beta.1"), true);
+  assert.equal(isNewerRelease("2026.10.15-beta.2", "2026.10.15-beta.1"), false);
   // An unparseable installed version (dev placeholder) is never auto-updated.
   assert.equal(isNewerRelease("2026.10.15", "unknown"), false);
   // An unparseable latest tag cannot be an upgrade.

@@ -11,9 +11,24 @@ after.
 weeks still gets the day it landed, because the tag is cut on the merge commit
 and that is the version anyone installs.
 
-A second release on the same day appends `-1`, `-2`: `2026.10.11-1`. The suffix
-exists for same-day re-releases only — a fix that ships tomorrow gets tomorrow's
-date, because a version is a date plus a tiebreaker, not an ordering.
+`YYYY.M.D` is a stable release and the only one the versionless install ever
+serves. A second release on the same day appends `-beta.N`: `2026.10.16-beta.1`.
+It is a pre-release — marked `--prerelease` on GitHub and published off the
+`latest` dist-tag — and exists for same-day rebuilds only; a fix that ships
+tomorrow gets tomorrow's date, because a version is a date plus a tiebreaker,
+not an ordering.
+
+The suffix says `beta` rather than a bare `-N` because the version string has to
+carry its own meaning: a rebuild that reached a real machine and broke does not
+belong beside the stable of the same day in a `git ls-remote` listing or an
+`npm view`, where nobody reads a flag. Semver also reads a suffix as a prerelease
+and files it *below* its base, which is why the bare form showed up on the tag
+page as if it were the older release; naming the lane removes the ambiguity
+instead of relying on the UI to resolve it.
+
+A `-beta.N` that turns out sound becomes the plain `YYYY.M.D` it was rehearsing
+— same date, no suffix, stable — and the tag that carried the beta keeps its
+place in history for anyone who pinned it.
 
 ## Order of operations
 
@@ -22,7 +37,11 @@ date, because a version is a date plus a tiebreaker, not an ordering.
    `install.sh`, commit as `chore(release): <version> — <summary>`, push.
 3. Tag the release commit — `git tag <version> -m "<version> — <summary>"` —
    and push the tag.
-4. `gh release create <version>` with the title and notes below.
+4. `gh release create <version>` with the title and notes below. For a `-beta.N`,
+   add `--prerelease`: it renders the amber badge and keeps GitHub's `latest`
+   marker on the newest stable, which is the same answer npm's dist-tag gives,
+   so `releases/latest/download/…` and `npm i -g` cannot disagree about what
+   "latest" means.
 5. `npm pack`, then attach the tarball twice — once named for the version, once
    under the stable alias — and upload both:
    ```bash
@@ -46,6 +65,23 @@ date, because a version is a date plus a tiebreaker, not an ordering.
    clone npm has already deleted — `doppler` then vanishes from `PATH`. It is
    npm's own default, unchanged across npm 8 through 11, and nothing in the
    package can set it (npm/cli#6984).
+
+6. Publish to npm, from the tagged tree: `npm publish`. This is what makes
+   `npm install -g @igorjpimenta/doppler-harness` mean "the newest release" with
+   no version in the command — npm's `latest` dist-tag is the registry's answer
+   to the question the alias asset answers on GitHub, and it is native rather
+   than maintained by hand. Requires npm auth on the publishing machine
+   (`npm whoami`; a token via `NPM_TOKEN` in `.npmrc` is the CI form). A version
+   already on the registry cannot be replaced, so a broken publish is fixed by
+   cutting the next release, never by re-publishing this one.
+
+   The dist-tag follows the version's role, not the calendar: a plain dated
+   release publishes to `latest` (`publishConfig.tag`), and a `-beta.N`
+   publishes under `--tag beta`, so `@latest` keeps pointing at the newest
+   *stable* release. That mirrors what `doppler update` already refuses to do on
+   its own — it will not install a rebuild over its base automatically — and it
+   keeps semver's "a suffix is a prerelease" reading from demoting the whole day
+   to a beta.
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.

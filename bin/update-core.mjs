@@ -1,42 +1,52 @@
-// Release tags are calendar versions ("2026.10.15", with an optional "-N" for a
-// same-day re-release). Every comparison here is numeric, because string order
-// ranks "2026.10.9" above "2026.10.14" and would silently pin machines to
-// October 9th forever.
+// Release tags are calendar versions: "2026.10.16" is the stable of that day and
+// "2026.10.16-beta.1" a pre-release of it. Every comparison here is numeric,
+// because string order ranks "2026.10.9" above "2026.10.14" and would silently
+// pin machines to October 9th forever.
+//
+// A bare "-N" is also accepted and lands in the same lane: those tags are out in
+// the wild and still pinnable, and a suffixed tag means a pre-release of its base
+// either way — so both spellings share one rule rather than carrying their own.
 
 export function parseTag(s) {
-  const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:-(\d{1,3}))?$/.exec(String(s).trim());
-  if (!m) return null;
-  return { y: +m[1], m: +m[2], d: +m[3], n: m[4] ? +m[4] : 0 };
+  const t = String(s).trim();
+  const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:-beta\.(\d{1,3}))?$/.exec(t);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3], n: m[4] ? +m[4] : 0 };
+  const legacy = /^(\d{4})\.(\d{1,2})\.(\d{1,2})-(\d{1,3})$/.exec(t);
+  if (!legacy) return null;
+  return { y: +legacy[1], m: +legacy[2], d: +legacy[3], n: +legacy[4] };
 }
 
-// Total order over tags: within a date base, higher -N is later — a "-1" is a
-// second release of its day, not an earlier draft of it. Semver sorts a suffix
-// below the base, and GitHub's tag listing inherits that reading; neither is the
-// order here.
+// Total order over tags: within a date base, a suffixed tag precedes the stable
+// it previews — "2026.10.16-beta.1" is what was rehearsed for "2026.10.16" —
+// and higher -beta.N outranks lower. Semver sorts a prerelease below its base
+// and GitHub's tag listing inherits that reading; here the two agree, because
+// the flag and the version string now say the same thing.
 //
 // This orders the newest-installable walk only. The upgrade decision is
-// isNewerRelease, which compares date bases alone.
+// isNewerRelease, which is stricter: it refuses pre-releases and promotes off
+// one.
 export function newerTag(a, b) {
-  const ka = [a.y, a.m, a.d, a.n];
-  const kb = [b.y, b.m, b.d, b.n];
+  const ka = [a.y, a.m, a.d, a.n === 0 ? Infinity : a.n];
+  const kb = [b.y, b.m, b.d, b.n === 0 ? Infinity : b.n];
   for (let i = 0; i < 4; i++) {
     if (ka[i] !== kb[i]) return ka[i] > kb[i] ? 1 : -1;
   }
   return 0;
 }
 
-// An upgrade decision, not a comparison: only a strictly newer DATE base
-// qualifies. A "-N" tag never auto-installs over its own plain release and
-// vice versa — "2026.10.14-1" is a test build that is content-AHEAD of
-// "2026.10.14" (it carries code the release does not), so "upgrading" it to the
-// release would delete files the registered config still points at. Same for a
-// release over a same-base "-N": neither direction is safe to automate, and
-// --force is the explicit way through.
+// An upgrade decision, not a comparison: only a stable of a strictly newer DATE
+// BASE qualifies, with one exception that is an exception in the safe direction.
+// A suffixed tag never auto-installs — a machine stays off pre-releases unless
+// it pins one or passes --force — and a machine already ON a pre-release is
+// promoted by the stable of the same day, which is the point of publishing the
+// stable at all. Everything else compares date bases alone.
 export function isNewerRelease(latest, installed) {
   const a = parseTag(latest);
   const b = installed == null ? null : parseTag(installed);
-  if (!a) return false;
-  if (!b) return false;
+  if (!a || !b) return false;
+  if (a.n > 0) return false;
+  const sameBase = a.y === b.y && a.m === b.m && a.d === b.d;
+  if (sameBase) return b.n > 0;
   return a.y * 10000 + a.m * 100 + a.d > b.y * 10000 + b.m * 100 + b.d;
 }
 

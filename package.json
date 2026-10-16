@@ -43,6 +43,7 @@
     "@types/node": "^22.10.0"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "tag": "latest"
   }
 }
