@@ -30,17 +30,10 @@ fi
 
 say "installed: $(node "$DOPPLER_HOME/bin/doppler.mjs" version)"
 
-  # The verbs are `install`/`uninstall` <harness>, so a bare harness name is
-  # expanded to `install <name>` rather than forwarded and rejected as unknown.
-  case "${1:-}" in
-    install|uninstall|update|doctor|version|"")
-      exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
-      ;;
-    *)
-      exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
-      ;;
-  esac
-
+# Before the exec below, not after: exec replaces this shell, so guidance placed
+# after the case statement never reached anyone. This is the first output after
+# the version line a fresh installer sees, and the only chance to tell them the
+# command that connects a harness.
 cat <<'EOF'
 
 Connect a harness (restart it afterwards):
@@ -58,9 +51,25 @@ deleted, and doppler never lands on PATH. See npm/cli#6984.
   npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
   doppler install opencode
 
-Every release also carries a tarball asset, which needs neither the flag nor git:
+Every release also carries a tarball asset, which needs neither the flag nor git.
+This versionless URL is the newest release's asset and is the default install:
+
+  npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
+
+To pin a release, name it in the URL:
 
   npm install -g https://github.com/igorjpimenta/doppler-harness/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz
 
 Docs: https://github.com/igorjpimenta/doppler-harness
 EOF
+
+# The verbs are `install`/`uninstall` <harness>, so a bare harness name is
+# expanded to `install <name>` rather than forwarded and rejected as unknown.
+case "${1:-}" in
+  install|uninstall|update|doctor|version|"")
+    exec node "$DOPPLER_HOME/bin/doppler.mjs" "$@"
+    ;;
+  *)
+    exec node "$DOPPLER_HOME/bin/doppler.mjs" install "$@"
+    ;;
+esac
