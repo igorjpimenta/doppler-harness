@@ -13,16 +13,24 @@ writing a bridge, not a second implementation.
 
 Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
-The versionless URL always serves the newest release's tarball — no tag to look
-up, and no `--install-links` caveat, because it is a plain tarball and not a git
-URL:
+```bash
+npm install -g @igorjpimenta/doppler-harness
+doppler install opencode
+```
+
+No version in the command: npm's `latest` dist-tag is the newest release. To
+pin, add one — `npm install -g @igorjpimenta/doppler-harness@<version>` — or
+install straight from the source, which needs no registry at all.
+
+The versionless GitHub URL serves the newest release's tarball, the same way,
+and works where the registry does not:
 
 ```bash
 npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
 doppler install opencode
 ```
 
-To pin, name the release in the URL
+To pin from source, name the release in the URL
 (`…/releases/download/<version>/igorjpimenta-doppler-harness-<version>.tgz`) or
 install from the git ref:
 

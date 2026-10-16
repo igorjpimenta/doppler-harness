@@ -47,6 +47,23 @@ date, because a version is a date plus a tiebreaker, not an ordering.
    npm's own default, unchanged across npm 8 through 11, and nothing in the
    package can set it (npm/cli#6984).
 
+6. Publish to npm, from the tagged tree: `npm publish`. This is what makes
+   `npm install -g @igorjpimenta/doppler-harness` mean "the newest release" with
+   no version in the command — npm's `latest` dist-tag is the registry's answer
+   to the question the alias asset answers on GitHub, and it is native rather
+   than maintained by hand. Requires npm auth on the publishing machine
+   (`npm whoami`; a token via `NPM_TOKEN` in `.npmrc` is the CI form). A version
+   already on the registry cannot be replaced, so a broken publish is fixed by
+   cutting the next release, never by re-publishing this one.
+
+   The dist-tag follows the version's role, not the calendar: a plain dated
+   release publishes to `latest` (`publishConfig.tag`), and a same-day `-N`
+   re-release publishes under `--tag next` so `@latest` keeps pointing at the
+   newest *stable* release. That mirrors what `doppler update` already refuses to
+   do on its own — it will not install a `-N` over its base automatically —
+   and it keeps semver's "a suffix is a prerelease" reading from demoting the
+   whole day to a beta.
+
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.
 
