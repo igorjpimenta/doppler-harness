@@ -30,6 +30,37 @@ A `-beta.N` that turns out sound becomes the plain `YYYY.M.D` it was rehearsing
 — same date, no suffix, stable — and the tag that carried the beta keeps its
 place in history for anyone who pinned it.
 
+## Tag names and npm versions are not the same names
+
+A tag is the contract for `github:…#<tag>` and for a release's asset URLs, so a
+tag is never renamed. The npm version is chosen independently — it has to be a
+name the registry has never seen. Those two rules collide exactly once, when a
+`-N` tag is republished under the `-beta.N` spelling: the registry forbids
+reusing a version it has ever held, including one that was unpublished, so the
+number can never go back.
+
+The releases published before the `-beta.N` lane existed therefore read as
+follows. Every `-beta.N` below was published from the tag beside it, with the
+version stamped in; the tombstones are versions the registry will never accept
+again.
+
+| git tag | npm version | on npm |
+|---|---|---|
+| `2026.9.29` | `2026.9.29-beta.1` | yes |
+| `2026.9.29-1` · `-2` · `-3` | — | never: their bridge is TypeScript, which Node cannot run |
+| `2026.10.5` | `2026.10.5-beta.1` | yes |
+| `2026.10.7` | `2026.10.7-beta.1` | yes |
+| `2026.10.8` | `2026.10.8-beta.1` | yes |
+| `2026.10.11` · `2026.10.14` · `2026.10.16` | same | yes, `latest` |
+| `2026.10.15` | `2026.10.15-beta.4` | yes |
+| `2026.10.15-1` | `2026.10.15-beta.5` | yes |
+| `2026.10.15-2` | `2026.10.15-beta.6` | yes — the build with the loader fix |
+| — | `2026.10.15-beta.1` · `.2` · `.3` | no — tombstoned by the first naming attempt |
+
+Check a name against both before publishing: `npm view <pkg> time` lists
+tombstones that `npm view <pkg> versions` omits, and a tombstone is what makes
+`npm publish` answer *Cannot publish over previously published version*.
+
 ## Order of operations
 
 1. Merge the PR. `main` receives code only this way.
