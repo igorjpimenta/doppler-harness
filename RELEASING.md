@@ -48,8 +48,10 @@ tombstones that `npm view <pkg> versions` omits, and a tombstone is what makes
 ## Order of operations
 
 1. Merge the PR. `main` receives code only this way.
-2. On `main`: bump `package.json`, update the version pins in `README.md` and
-   `install.sh`, commit as `chore(release): <version> — <summary>`, push.
+2. Open a release PR from `main`: bump `package.json`, update the version pins in
+   `README.md` and `install.sh`, commit as `chore(release): <version> — <summary>`,
+   and merge it like any other PR. `main` receives every change, including the
+   bump, only through a PR — never a direct push.
 3. Tag the release commit — `git tag <version> -m "<version> — <summary>"` —
    and push the tag.
 4. `gh release create <version>` with the title and notes below. For a `-beta.N`,
