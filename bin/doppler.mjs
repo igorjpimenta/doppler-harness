@@ -28,7 +28,8 @@
 //   doppler version
 import fs from "node:fs";
 import os from "node:os";
-import { execSync } from "node:child_process";
+import crypto from "node:crypto";
+import { execSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -85,6 +86,30 @@ const LOADER = path.join(PKG, "dist", "loader.js");
 // What the loader wrote about the last session's load, so `doppler plugin
 // status` can answer the question the config cannot: did anything actually run?
 const PLUGIN_REPORT = path.join(HOME, "plugins.loaded.json");
+
+// Same hash the bridge writes of itself at load (opencode/doppler.ts), so the two
+// sides compare like for like. Truncated to 16 hex chars: the value only has to
+// differ when the code differs, and a collision there is not a realistic failure.
+const ENGINE_LOADED = path.join(HOME, "engine.loaded.json");
+
+function pkgStamp(file) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+  } catch {
+    return "missing";
+  }
+}
+
+// null means no record to compare — a fresh root, or a bridge too old to write
+// one — and the caller has to distinguish that from a mismatch.
+function engineLoadedStamp() {
+  try {
+    const j = JSON.parse(fs.readFileSync(ENGINE_LOADED, "utf8"));
+    return j && typeof j.stamp === "string" ? { stamp: j.stamp, at: j.loadedAt, pid: j.pid } : null;
+  } catch {
+    return null;
+  }
+}
 
 // The bridge's declared id (opencode/doppler.ts exports it as a PluginModule).
 // OpenCode loads every registered plugin and does not dedup by id, so "doppler
@@ -671,8 +696,32 @@ function doctor() {
 
   // The bridge is read in place from the package. A missing one means the
   // install is broken, not half-finished, and nothing will load.
-  if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
-  else bad("bridge file", `missing at ${BRIDGE}`, "doppler install opencode");
+if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
+    else bad("bridge file", `missing at ${BRIDGE}`, "doppler install opencode");
+
+    // The build on disk is not the engine a running session is executing: a plugin
+    // module is imported once and cached for the life of the process, so the file
+    // says nothing about which build the harness loaded. Everything above and
+    // below this check is about the files being correct; this one is about the
+    // file being the one in use. The bridge records what it loaded, so the
+    // comparison is a read of both sides rather than a guess about the other.
+    const loadedStamp = engineLoadedStamp();
+    if (loadedStamp == null) {
+      // No record, no claim either: the harness has not loaded since the stamp
+      // landed (a fresh root, or automatic reloading off on an older bridge), and
+      // a warning with no way to act on it teaches the reader to ignore warnings.
+      ok("engine build", `${pkgStamp(BRIDGE)} on disk; no running harness has recorded a load yet`);
+    } else if (loadedStamp.stamp === "unknown") {
+      warn("engine build", `the loaded bridge could not be fingerprinted — unknown which build ${BRIDGE} is`);
+    } else if (loadedStamp.stamp !== pkgStamp(BRIDGE)) {
+      bad(
+        "engine build",
+        `OpenCode loaded build ${loadedStamp.stamp} (${loadedStamp.at}) but ${rel(BRIDGE)} on disk is ${pkgStamp(BRIDGE)}`,
+        "quit and reopen OpenCode — a running harness never re-reads its plugin",
+      );
+    } else {
+      ok("engine build", `${loadedStamp.stamp} — on disk and in the running harness agree`);
+    }
 
   // The registration is the thing that can go stale without anything moving.
   // Read with the splicer rather than JSON.parse: a config carrying comments is
@@ -722,29 +771,45 @@ bad(
     bad("registered in opencode config", `no doppler entry in ${cfg}`, "doppler install opencode");
   }
 
-  // Does OpenCode actually load it? An entry in a file it ignores is
-  // indistinguishable from a working install until something needs it. Compared
-  // as a path, because OpenCode echoes the plugin list back as strings and the
-  // file URL's percent-encoding is not ours to predict.
-  const oc = opencodeCli();
-  if (!oc) {
-    bad("opencode CLI", "not found", "install it, or set OPENCODE_BIN");
-  } else {
-    try {
-      const resolved = JSON.parse(execSync(`${oc} debug config`, { stdio: ["ignore", "pipe", "ignore"] }).toString());
-      const loaded = (resolved.plugin ?? []).some((p) => {
+// Does OpenCode actually load it? An entry in a file it ignores is
+    // indistinguishable from a working install until something needs it. Compared
+    // as a path, because OpenCode echoes the plugin list back as strings and the
+    // file URL's percent-encoding is not ours to predict.
+    //
+    // `debug config` truncates its own output when stdout is a pipe — a full
+    // document is ~114KB, and a pipe capture arrives cut mid-key at ~65KB,
+    // deterministically and regardless of maxBuffer. Writing to a file is
+    // complete, so the defect is in the CLI's pipe writes, not in who reads
+    // them. A read like this one is therefore guaranteed to fail on a working
+    // install, so the registration file is the primary evidence and the CLI
+    // output is corroborating only when it parses.
+    const oc = opencodeCli();
+    if (!oc) {
+      bad("opencode CLI", "not found", "install it, or set OPENCODE_BIN");
+    } else {
+      const fileEntries = stringElements(readConfig(cfg), topLevelValueSpan(readConfig(cfg), "plugin"))
+        .some((e) => {
+          try { return path.resolve(fileURLToPath(JSON.parse(e))) === registered; } catch { return false; }
+        });
+      const run = spawnSync(oc, ["debug", "config"], { encoding: "utf8", timeout: 30_000 });
+      let cliLoaded = null;
+      if (run.status === 0 && typeof run.stdout === "string") {
         try {
-          return path.resolve(fileURLToPath(String(p))) === registered;
+          cliLoaded = (JSON.parse(run.stdout).plugin ?? []).some((p) => {
+            try { return path.resolve(fileURLToPath(String(p))) === registered; } catch { return false; }
+          });
         } catch {
-          return false;
+          cliLoaded = null;
         }
-      });
-      if (loaded) ok("opencode loads the bridge");
-      else bad("opencode loads the bridge", "the entry is not in the resolved config", "doppler install opencode");
-    } catch (e) {
-      bad("opencode loads the bridge", String(e.message).split("\n")[0], `fix ${cfg}, then re-run`);
+      }
+      if (fileEntries) {
+        if (cliLoaded === true) ok("opencode loads the bridge");
+        else if (cliLoaded === false) bad("opencode loads the bridge", "the entry is not in the resolved config", "doppler install opencode");
+        else ok("opencode loads the bridge", `entry present in ${rel(cfg)}`);
+      } else {
+        bad("opencode loads the bridge", `no doppler entry in ${cfg}`, "doppler install opencode");
+      }
     }
-  }
 
   // No hooks is a legitimate state, not a failure — but it is the one where the
   // user believes something is enforced and nothing is, so it is named.

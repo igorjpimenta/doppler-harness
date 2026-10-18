@@ -768,4 +768,106 @@ test("plugin register names a missing loader rather than writing a dead entry", 
   assert.match(out(r), /no loader at /, "says what is wrong");
   assert.equal(r.status, 1, "and exits non-zero rather than registering a dead URL");
   assert.equal(configOf(m).plugin, undefined, "no entry was written into the seeded config");
+  });
+
+// A plugin module is imported once and cached for the life of the process, so a
+// bridge file on disk can be a different build from the one a running session is
+// executing — and every other check in doctor reads the file, so none of them can
+// see it. The bridge records the build it loaded and these pin the comparison.
+test("doctor reports no engine build when nothing has recorded a load", () => {
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    const r = run(m, ["doctor"]);
+    assert.match(out(r), /ok\s+engine build — [0-9a-f]{16} on disk; no running harness has recorded a load yet/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("doctor agrees when the loaded build is the one on disk", () => {
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    const bridge = path.join(ROOT, "dist", "doppler.js");
+    const stamp = spawnSync("shasum", ["-a", "256", bridge], { encoding: "utf8" }).stdout.trim().split(/\s+/)[0].slice(0, 16);
+    fs.writeFileSync(
+      path.join(m.home, ".doppler", "engine.loaded.json"),
+      `${JSON.stringify({ stamp, pid: 1, loadedAt: "2026-10-17T10:00:00.000Z" })}\n`,
+    );
+    const r = run(m, ["doctor"]);
+    assert.equal(r.status, 0, out(r));
+    assert.match(out(r), /ok\s+engine build — [0-9a-f]{16} — on disk and in the running harness agree/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("doctor fails when the running harness loaded a different build", () => {
+  // The whole reason the stamp exists: a harness that loaded the build before an
+  // update still enforces the old one, and reporting green against a file it
+  // never read is the failure worth being loud about.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    fs.writeFileSync(
+      path.join(m.home, ".doppler", "engine.loaded.json"),
+      `${JSON.stringify({ stamp: "deadbeefdeadbeef", pid: 1, loadedAt: "2026-10-17T09:00:00.000Z" })}\n`,
+    );
+    const r = run(m, ["doctor"]);
+    assert.equal(r.status, 1, out(r));
+    assert.match(out(r), /FAIL\s+engine build — OpenCode loaded build deadbeefdeadbeef/);
+    assert.match(out(r), /quit and reopen OpenCode/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+test("an unreadable engine record is no record, not a crash", () => {
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    fs.writeFileSync(path.join(m.home, ".doppler", "engine.loaded.json"), "not json\n");
+    const r = run(m, ["doctor"]);
+    assert.equal(r.status, 0, out(r));
+    assert.match(out(r), /no running harness has recorded a load yet/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
+// `debug config` truncates its own stdout when it is a pipe — a full document is
+// ~114KB and a capture arrives cut mid-key at ~65KB, on every run and regardless
+// of maxBuffer. Parsing it therefore fails on a working install and reports it as
+// broken. The registration file is the answer; the CLI is corroboration only.
+test("a truncated debug config does not fail a working install", () => {
+  const m = machine();
+  const truncating = path.join(m.home, "truncating-opencode");
+  try {
+    run(m, ["install", "opencode"]);
+    fs.writeFileSync(
+      truncating,
+      `#!/bin/sh
+echo '{"plugin": ["file:///a/very/long/path/that/goes/on"], "agent": {"a long key that `
+        + `"carries on past the point where the pipe stops writing` .repeat(2000),
+    );
+    fs.chmodSync(truncating, 0o755);
+
+    const r = spawnSync(process.execPath, [DOPPLER, "doctor"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: m.home,
+        OPENCODE_BIN: truncating,
+        DOPPLER_HOME: path.join(m.home, ".doppler"),
+        PATH: m.path,
+      },
+    });
+    const text = `${r.stdout}${r.stderr}`;
+    assert.doesNotMatch(text, /FAIL\s+opencode loads the bridge/);
+    assert.match(text, /ok\s+opencode loads the bridge/);
+    assert.doesNotMatch(text, /Unterminated string/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
 });
