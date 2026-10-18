@@ -17,7 +17,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import type { Config, Plugin, PluginInput } from "@opencode-ai/plugin";
 
@@ -501,6 +503,49 @@ const RELOAD_BUSY_ESCAPE_MS = 600_000;
 // to disk to work around that is a worse trade than a file the user touches.
 const RELOAD_SENTINEL = ".reload";
 
+// Where the bridge records what it loaded, so `doppler doctor` can tell the file
+// on disk from the code a running harness is executing.
+//
+// A plugin module is imported once and cached for the life of the process, so
+// nothing else can answer that: reading the file reports the build, not the
+// engine. `doctor` reporting green against a build the session never loaded is
+// the failure this closes — every other check in it is about the file being
+// correct, and this one is about the file being the one in use.
+const ENGINE_LOADED = "engine.loaded.json";
+
+// Content hash, not mtime+size: a rebuild that reproduces identical output is not
+// a change, and a same-length edit is. The value is deliberately coarse — it only
+// has to differ when the executed code does.
+function engineStamp(): string {
+  try {
+    return crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(fileURLToPath(import.meta.url)))
+      .digest("hex")
+      .slice(0, 16);
+  } catch {
+    return "unknown";
+  }
+}
+
+// Written on load, before any check runs. A failure here is not worth reporting:
+// the stamp exists for `doctor` to read, and a root that cannot be written to is
+// already reported by every other line.
+function recordEngineLoad() {
+  try {
+    fs.writeFileSync(
+      path.join(paths().home, ENGINE_LOADED),
+      JSON.stringify({
+        stamp: engineStamp(),
+        pid: process.pid,
+        loadedAt: new Date().toISOString(),
+      }) + "\n",
+    );
+  } catch {
+    // no opinion
+  }
+}
+
 function reloadAutomatic() {
   const v = (process.env.DOPPLER_RELOAD ?? "").trim().toLowerCase();
   return !(v === "off" || v === "0" || v === "false" || v === "no");
@@ -772,6 +817,9 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
 
 export const DopplerHarness: Plugin = async (input) => {
   const { client } = input;
+  // First thing, before anything can report: the one fact `doctor` cannot
+  // otherwise know — which build this process is actually running.
+  recordEngineLoad();
   // Fail-open means a broken runtime is indistinguishable from a permissive one
   // at runtime, so say so once, at the only moment the difference is visible.
   if (!nodeUsable()) {
