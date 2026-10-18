@@ -184,6 +184,38 @@ test("an unchanged plugin keeps its module state across loads", async () => {
   r.cleanup();
 });
 
+test("a first load executes the real files, not copies", async () => {
+  // A fresh process has an empty module cache, so the copy would buy nothing —
+  // and the stack traces stay pointed at the files the user wrote.
+  const r = rootWith();
+  fs.writeFileSync(path.join(r.dir, "steady.js"), "export const S = async () => ({});\n");
+
+  await loadHooks();
+  assert.equal(
+    fs.existsSync(path.join(r.home, ".loader-cache")),
+    false,
+    "nothing changed, nothing copied",
+  );
+  r.cleanup();
+});
+
+test("edited copies do not accumulate", async () => {
+  const r = rootWith();
+  const file = path.join(r.dir, "versioned.js");
+  const body = (tag) => `export const V = async () => ({}); // ${tag}\n`;
+  fs.writeFileSync(file, body("v1"));
+
+  await loadHooks();
+  fs.writeFileSync(file, body("v22222222222222"));
+  await loadHooks();
+  fs.writeFileSync(file, body("v33333333333333333333333"));
+  await loadHooks();
+
+  const copies = fs.readdirSync(path.join(r.home, ".loader-cache"));
+  assert.equal(copies.length, 1, `one live copy, not three: ${copies.join(",")}`);
+  r.cleanup();
+});
+
 test("a PluginModule object export is loaded, not just a bare function", async () => {
   // Every plugin written against the current SDK exports `default { id, server }`,
   // which is not a function. Accepting only the bare-function shape makes a real
