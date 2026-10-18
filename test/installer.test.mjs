@@ -323,7 +323,7 @@ test("doctor names the CLI it is running from, with its version", () => {
     run(m, ["install", "opencode"]);
     const r = run(m, ["doctor"]);
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
-    assert.match(out(r), /ok {4}cli — .* — \d{4}\.\d+\.\d+(-\d+)?$/m);
+    assert.match(out(r), /ok {4}cli — .* — \d{4}\.\d+\.\d+(-beta\.\d+)?$/m);
     assert.match(out(r), new RegExp(`cli — .* — ${version.replace(/\./g, "\\.")}$`, "m"));
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
@@ -360,7 +360,7 @@ esac
       encoding: "utf8",
       env: { ...process.env, HOME: m.home, PATH: m.path, DOPPLER_HOME: path.join(m.home, ".doppler") },
     });
-    assert.match(out(r), /ok {4}cli — .*pkg — \d+\.\d+\.\d+(-\d+)?$/m);
+    assert.match(out(r), /ok {4}cli — .*pkg — \d+\.\d+\.\d+(-beta\.\d+)?$/m);
     assert.doesNotMatch(out(r), /on stable/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
@@ -503,8 +503,8 @@ test("version and help work with no opencode and no personal root", () => {
   try {
     const v = run(m, ["version"]);
     assert.equal(v.status, 0);
-    // CalVer, with an optional -N for a same-day re-release.
-    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+(-\d+)?$/);
+    // CalVer, with an optional -beta.N for a same-day re-release (RELEASING.md).
+    assert.match(v.stdout.trim(), /^\d{4}\.\d+\.\d+(-beta\.\d+)?$/);
     const h = run(m, []);
     assert.equal(h.status, 0);
     assert.match(out(h), /usage: doppler/);

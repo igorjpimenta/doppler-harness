@@ -23,11 +23,14 @@ import { DopplerHarness, internals } from "../opencode/doppler.ts";
 // because the bridge reads that path from os.homedir() (which honors $HOME on
 // POSIX), and on a machine that has real global instructions every
 // registration assertion would otherwise depend on the developer's own setup.
-function rootWith({ hooks = {}, policy = {}, skills = {}, mkdir = [], globalAgentsMd = null } = {}) {
+function rootWith({ hooks = {}, policy = {}, skills = {}, plugins = {}, mkdir = [], globalAgentsMd = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-bridge-"));
   fs.mkdirSync(path.join(home, "policy"), { recursive: true });
-  for (const d of ["hooks", "agents", "skills", ...mkdir]) {
+  for (const d of ["hooks", "agents", "skills", "plugins", ...mkdir]) {
     fs.mkdirSync(path.join(home, d), { recursive: true });
+  }
+  for (const [name, body] of Object.entries(plugins)) {
+    fs.writeFileSync(path.join(home, "plugins", name), body);
   }
   for (const [name, body] of Object.entries(skills)) {
     const dir = path.join(home, "skills", name);
@@ -648,6 +651,28 @@ test("what counts as a change is the config snapshot, not the files", async () =
 
     fs.writeFileSync(path.join(home, "overlay.json"), JSON.stringify({ skillsRoots: [] }));
     assert.notEqual(internals.rootSnapshot(), before, "the overlay roots");
+  });
+});
+
+test("a plugin edit counts as a change; its tests and hidden files do not", async () => {
+  // The loader re-imports a plugin whose stamp changed on the next rebuild, so
+  // the snapshot has to notice the edit — otherwise the rebuilt instance keeps
+  // running the cached copy. Everything the loader would skip has to stay
+  // invisible for the same reason a hook body is: reloading for it trades a
+  // working session for nothing.
+  await withRoot({ plugins: { "heal.js": "export const H = async () => ({});\n" } }, async (home) => {
+    const before = internals.rootSnapshot();
+
+    fs.writeFileSync(path.join(home, "plugins", "heal.js"), "export const H = async () => ({});\n// edited\n");
+    assert.notEqual(internals.rootSnapshot(), before, "a loaded plugin file");
+
+    const steady = internals.rootSnapshot();
+    fs.writeFileSync(path.join(home, "plugins", "__tests__.js"), "throw new Error('tests must not load');\n");
+    fs.writeFileSync(path.join(home, "plugins", ".heal.js.swp"), "swap\n");
+    fs.writeFileSync(path.join(home, "plugins", "notes.txt"), "notes\n");
+    fs.mkdirSync(path.join(home, "plugins", "__tests__"), { recursive: true });
+    fs.writeFileSync(path.join(home, "plugins", "__tests__", "heal.test.mjs"), "x\n");
+    assert.equal(internals.rootSnapshot(), steady, "nothing the loader would skip");
   });
 });
 

@@ -417,7 +417,7 @@ function verify() {
     sh(`${oc} debug config`);
     console.log(`bridge registered in ${ocConfigPath()} — config parses, hooks are live.`);
     console.log("restart opencode once, to load the bridge it has just registered.");
-    console.log("after that, editing your hooks, policy, agents or skills needs no restart.");
+    console.log("after that, editing your hooks, policy, agents, skills or plugins needs no restart.");
   } catch (e) {
     console.warn(`${ocConfigPath()} did not parse: ${String(e.message).split("\n")[0]}`);
     console.warn("  OpenCode will ignore it, so no doppler hooks will run. Fix the file, then re-run.");
@@ -885,10 +885,10 @@ bad(
   if (reloadOff) {
     warn(
       "live refresh",
-      "DOPPLER_RELOAD is off, so policy, agent and skill edits need opencode restarted — `doppler reload` still works",
+      "DOPPLER_RELOAD is off, so policy, agent, skill and plugin edits need opencode restarted — `doppler reload` still works",
     );
   } else {
-    ok("live refresh", "policy, agent and skill edits apply without restarting opencode");
+    ok("live refresh", "policy, agent, skill and plugin edits apply without restarting opencode");
   }
 
   console.log();

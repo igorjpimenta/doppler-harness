@@ -144,6 +144,78 @@ test("object-shaped hooks merge instead of overwriting", async () => {
   assert.equal(hooks.tool.gamma.description, "c", "later plugin's own tool is added");
   r.cleanup();
 });
+test("an edited plugin is re-imported on the next load, without a restart", async () => {
+  // The module cache is the hazard: a plain re-import after an edit returns the
+  // stale module, so the rebuilt instance would keep running the old code. The
+  // marker lands at module top level, which runs once per import — twice in the
+  // file means the second load executed the edited file.
+  const r = rootWith();
+  const seen = path.join(r.home, "seen.log");
+  const file = path.join(r.dir, "versioned.js");
+  const body = (tag) =>
+    `import fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(seen)}, ${JSON.stringify(tag + "\n")});\nexport const V = async () => ({});\n// ${tag}\n`;
+  fs.writeFileSync(file, body("v1"));
+
+  await loadHooks();
+  assert.equal(fs.readFileSync(seen, "utf8"), "v1\n", "first load ran v1");
+
+  fs.writeFileSync(file, body("v2-much-longer-tag"));
+  await loadHooks();
+  assert.equal(fs.readFileSync(seen, "utf8"), "v1\nv2-much-longer-tag\n", "second load ran the edit, not the cache");
+  r.cleanup();
+});
+
+test("an unchanged plugin keeps its module state across loads", async () => {
+  // The other half: re-importing everything on every rebuild would reset
+  // in-flight moves and dedupe maps for reloads that had nothing to do with
+  // them. One evaluation across two loads means the cache hit was kept.
+  const r = rootWith();
+  const seen = path.join(r.home, "seen.log");
+  fs.writeFileSync(
+    path.join(r.dir, "steady.js"),
+    `import fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(seen)}, "evaluated\\n");\nexport const S = async () => ({});\n`,
+  );
+
+  await loadHooks();
+  await loadHooks();
+  assert.equal(fs.readFileSync(seen, "utf8"), "evaluated\n", "one evaluation for two loads");
+  const report = JSON.parse(fs.readFileSync(path.join(r.home, "plugins.loaded.json"), "utf8"));
+  assert.equal(typeof report.plugins[0].stamp, "string", "the report carries the stamp the next load compares");
+  r.cleanup();
+});
+
+test("a first load executes the real files, not copies", async () => {
+  // A fresh process has an empty module cache, so the copy would buy nothing —
+  // and the stack traces stay pointed at the files the user wrote.
+  const r = rootWith();
+  fs.writeFileSync(path.join(r.dir, "steady.js"), "export const S = async () => ({});\n");
+
+  await loadHooks();
+  assert.equal(
+    fs.existsSync(path.join(r.home, ".loader-cache")),
+    false,
+    "nothing changed, nothing copied",
+  );
+  r.cleanup();
+});
+
+test("edited copies do not accumulate", async () => {
+  const r = rootWith();
+  const file = path.join(r.dir, "versioned.js");
+  const body = (tag) => `export const V = async () => ({}); // ${tag}\n`;
+  fs.writeFileSync(file, body("v1"));
+
+  await loadHooks();
+  fs.writeFileSync(file, body("v22222222222222"));
+  await loadHooks();
+  fs.writeFileSync(file, body("v33333333333333333333333"));
+  await loadHooks();
+
+  const copies = fs.readdirSync(path.join(r.home, ".loader-cache"));
+  assert.equal(copies.length, 1, `one live copy, not three: ${copies.join(",")}`);
+  r.cleanup();
+});
+
 test("a PluginModule object export is loaded, not just a bare function", async () => {
   // Every plugin written against the current SDK exports `default { id, server }`,
   // which is not a function. Accepting only the bare-function shape makes a real
