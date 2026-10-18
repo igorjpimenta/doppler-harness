@@ -836,10 +836,10 @@ test("an unreadable engine record is no record, not a crash", () => {
   }
 });
 
-// `debug config` truncates its own stdout when it is a pipe — a full document is
-// ~114KB and a capture arrives cut mid-key at ~65KB, on every run and regardless
-// of maxBuffer. Parsing it therefore fails on a working install and reports it as
-// broken. The registration file is the answer; the CLI is corroboration only.
+// `debug config` truncates its own stdout when it is a pipe, cutting the document
+// mid-key on every run and regardless of maxBuffer. Parsing it therefore fails on a
+// working install and reports it as broken. The registration file is the answer; the
+// CLI is corroboration only.
 test("a truncated debug config does not fail a working install", () => {
   const m = machine();
   const truncating = path.join(m.home, "truncating-opencode");
