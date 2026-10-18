@@ -2,10 +2,10 @@
 
 One canonical config root serving many harnesses (OpenCode live) via native
 mechanisms only — no symlinks, no maintained copies *of the config root*. The
-package ships **no content**: the policy, the agents, the skills and the
-permission rules all live in the personal root and are read in place, so
-editing any of them takes effect in the running harness, with no re-install and
-no restart.
+package ships **no content**: the policy, the agents, the skills, the plugins
+and the permission rules all live in the personal root and are read in place,
+so editing any of them takes effect in the running harness, with no re-install
+and no restart.
 
 ## Commands
 

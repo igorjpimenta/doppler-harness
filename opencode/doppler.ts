@@ -612,6 +612,24 @@ function rootSnapshot(): string {
   } catch {
     // no hooks directory yet
   }
+  // plugins/ IS walked, unlike hooks/. A hook body is exec'd per tool call and
+  // therefore already live, but a plugin module is imported once and cached for
+  // the life of the process — the loader re-imports a plugin whose stamp changed
+  // (opencode/loader.ts), so a plugin edit has to read as a change here or the
+  // rebuilt instance would keep running the cached copy. Only the files the
+  // loader would load count, so a test edit does not cost a reload. The filter
+  // duplicates the loader's rather than importing it: tests import this file
+  // from source, where ./loader.js does not resolve, and the dist layout is a
+  // build artifact rather than a contract.
+  try {
+    for (const f of fs.readdirSync(path.join(home, "plugins")).sort()) {
+      if (f.startsWith(".") || f.startsWith("__tests__")) continue;
+      if (![".js", ".mjs", ".ts"].includes(path.extname(f))) continue;
+      parts.push(stamp(path.join(home, "plugins", f)));
+    }
+  } catch {
+    // no plugins directory yet
+  }
   return parts.sort().join("\n");
 }
 
@@ -746,7 +764,7 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
         warned = true;
         report(
           `could not reach OpenCode to reload (${input.serverUrl ?? "no server URL"}); ` +
-            "policy, agent and skill changes stay invisible to the running session until it can",
+            "policy, agent, skill and plugin changes stay invisible to the running session until it can",
           "warn",
           client,
         );

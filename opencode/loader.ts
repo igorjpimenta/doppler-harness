@@ -5,8 +5,11 @@
 // config file's `plugin` array and the plugin directories, neither of which the
 // personal root can occupy without a copy. So this is the registered entry: one
 // line in the user's config, pointing here, and it discovers the personal root's
-// plugins at load time. New plugin files are live on the next restart with no
-// re-install — the same "read in place" property everything else in the root has.
+// plugins at load time. New and edited plugin files are live on the next reload
+// with no re-install — the same "read in place" property everything else in the
+// root has. (A reload rebuilds the instance and re-runs this loader; the
+// per-file stamp below is what makes that re-run execute the edited file
+// instead of the ESM cache's copy of it.)
 //
 // It ships no plugin of its own. What it loads is the user's, in filename order,
 // and what it does about a broken one is carry on: a personal root that has one
@@ -110,11 +113,60 @@ function pluginFns(mod: Record<string, unknown>): Array<[string, Plugin]> {
   return out;
 }
 
+// What the last load saw, so a reload only re-imports what changed. A plugin
+// module is imported once and cached for the life of the process — without a
+// cache-busting key, an instance rebuild after `doppler reload` would re-run
+// this loader against the same stale modules and the edit would stay invisible
+// until a restart. The report already written for `doppler plugin status`
+// carries the stamps, so the comparison needs no new state file.
+type PluginReport = {
+  home: string;
+  plugins: Array<{ name: string; ok: boolean; error?: string; stamp?: string }>;
+  at: string;
+};
+
+function lastStamps(home: string): Map<string, string> {
+  try {
+    const report = JSON.parse(fs.readFileSync(path.join(home, "plugins.loaded.json"), "utf8")) as PluginReport;
+    const out = new Map<string, string>();
+    for (const p of report.plugins ?? []) if (typeof p.stamp === "string") out.set(p.name, p.stamp);
+    return out;
+  } catch {
+    // No report yet: every file loads fresh, which is exactly what a first
+    // load should do.
+    return new Map();
+  }
+}
+
+// mtimeMs carries sub-millisecond precision on APFS; size rides along so a
+// same-tick rewrite of identical length still reads as unchanged only when it
+// really is byte-identical — which is precisely when re-importing is pointless.
+function pluginStamp(full: string): string {
+  try {
+    const s = fs.statSync(full);
+    return `${s.mtimeMs}:${s.size}`;
+  } catch {
+    return "absent";
+  }
+}
+
+// Unchanged since the last load imports the canonical URL — the ESM cache hit,
+// which keeps the module's state (in-flight moves, dedupe maps) alive across
+// reloads that had nothing to do with it. Changed imports with a query key,
+// which the module cache treats as a distinct module, so the rebuilt instance
+// executes the edited file.
+function importKey(full: string, stamp: string, known: Map<string, string>, label: string): string {
+  const href = pathToFileURL(full).href;
+  if (known.get(label) === stamp) return href;
+  return `${href}?doppler=${encodeURIComponent(stamp)}`;
+}
+
 export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   const home = personalRoot();
   const dir = path.join(home, "plugins");
   const files = rootPlugins(home);
-  const loaded: Array<{ name: string; ok: boolean; error?: string }> = [];
+  const known = lastStamps(home);
+  const loaded: Array<{ name: string; ok: boolean; error?: string; stamp?: string }> = [];
 
   const hooks: Record<string, unknown> = {};
   const chains = new Map<string, Array<(arg: unknown) => Promise<unknown>>>();
@@ -143,20 +195,23 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   for (const file of files) {
     const full = path.join(dir, file);
     const label = `${file.replace(/\.[cm]?[jt]s$/, "")}`;
+    // Stamped before the import so the report describes the file that was
+    // actually executed even if an edit lands mid-load.
+    const stamp = pluginStamp(full);
     try {
-      const mod = (await import(pathToFileURL(full).href)) as Record<string, unknown>;
+      const mod = (await import(importKey(full, stamp, known, label))) as Record<string, unknown>;
       const fns = pluginFns(mod);
       if (!fns.length) {
-        loaded.push({ name: label, ok: false, error: "exports no plugin function" });
+        loaded.push({ name: label, ok: false, error: "exports no plugin function", stamp });
         continue;
       }
       for (const [name, fn] of fns) {
         const result = await fn(input);
         register(name === "default" ? label : `${label}:${name}`, result as Record<string, unknown>);
-        loaded.push({ name: name === "default" ? label : `${label}:${name}`, ok: true });
+        loaded.push({ name: name === "default" ? label : `${label}:${name}`, ok: true, stamp });
       }
     } catch (err) {
-      loaded.push({ name: label, ok: false, error: String((err as Error)?.message ?? err) });
+      loaded.push({ name: label, ok: false, error: String((err as Error)?.message ?? err), stamp });
     }
   }
 
