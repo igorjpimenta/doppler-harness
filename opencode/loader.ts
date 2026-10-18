@@ -181,6 +181,12 @@ function cachedCopy(home: string, dir: string, file: string, label: string, stam
   try {
     fs.mkdirSync(cacheDir(home), { recursive: true });
     fs.copyFileSync(path.join(dir, file), dest);
+    // Read-back before import: the copy is imported milliseconds after it is
+    // written, and a runtime that resolves the URL through a stale stat cache
+    // reports the just-written file as missing. Reading it through the same
+    // filesystem first is the barrier. Observed once live: the copy existed on
+    // disk and its own import failed with ENOENT.
+    fs.readFileSync(dest);
     return safe;
   } catch {
     // A cache that cannot be written is not a reason to fail the session.
@@ -272,7 +278,18 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
     try {
       const target = importTarget(home, dir, file, stamp, known, hadReport);
       if (target.cached) keep.add(target.cached);
-      const mod = (await import(target.url)) as Record<string, unknown>;
+      let mod: Record<string, unknown>;
+      try {
+        mod = (await import(target.url)) as Record<string, unknown>;
+      } catch (first) {
+        if (!target.cached) throw first;
+        // The copy exists on disk but the runtime could not see it — observed
+        // once live as an ENOENT for a file that was provably there. One retry
+        // through a fresh copy before giving up on the file.
+        const retry = importTarget(home, dir, file, `${stamp}#retry`, known, hadReport);
+        if (retry.cached) keep.add(retry.cached);
+        mod = (await import(retry.url)) as Record<string, unknown>;
+      }
       const fns = pluginFns(mod);
       if (!fns.length) {
         loaded.push({ name: label, file, ok: false, error: "exports no plugin function", stamp });
