@@ -776,13 +776,12 @@ bad(
     // as a path, because OpenCode echoes the plugin list back as strings and the
     // file URL's percent-encoding is not ours to predict.
     //
-    // `debug config` truncates its own output when stdout is a pipe — a full
-    // document is ~114KB, and a pipe capture arrives cut mid-key at ~65KB,
-    // deterministically and regardless of maxBuffer. Writing to a file is
-    // complete, so the defect is in the CLI's pipe writes, not in who reads
-    // them. A read like this one is therefore guaranteed to fail on a working
-    // install, so the registration file is the primary evidence and the CLI
-    // output is corroborating only when it parses.
+// `debug config` truncates its own output when stdout is a pipe, cutting
+      // the document mid-key, deterministically and regardless of maxBuffer.
+      // Writing to a file is complete, so the defect is in the CLI's pipe writes,
+      // not in who reads them. A read like this one is therefore guaranteed to
+      // fail on a working install, so the registration file is the primary
+      // evidence and the CLI output is corroborating only when it parses.
     const oc = opencodeCli();
     if (!oc) {
       bad("opencode CLI", "not found", "install it, or set OPENCODE_BIN");
