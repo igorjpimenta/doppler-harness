@@ -62,11 +62,16 @@ function rootPlugins(home: string) {
 }
 
 // OpenCode's Hooks is callbacks plus three object-shaped entries (tool, auth,
-// provider). Callbacks chain in registration order so an earlier plugin's
-// mutation is visible to the next; objects merge with the later plugin winning
-// per key. An unknown key is passed through untouched rather than dropped —
-// this runs inside someone's session, and silently discarding a hook shape
-// this version has never heard of is how a plugin "stops working" with no error.
+// provider). Callbacks run in registration order; every one receives the same
+// (input, output) pair OpenCode itself would hand it, because that is the only
+// calling convention output mutation works under — threading only the first
+// argument through the chain silently drops `output`, which is how
+// tool.execute.before hooks lose their `args` and chat.message hooks lose
+// their `parts` with no error anywhere. Objects merge with the later plugin
+// winning per key. An unknown key is passed through untouched rather than
+// dropped — this runs inside someone's session, and silently discarding a hook
+// shape this version has never heard of is how a plugin "stops working" with
+// no error.
 const CALLBACK_HOOKS = new Set([
   "event",
   "tool.execute.before",
@@ -246,7 +251,7 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   const keep = new Set<string>();
 
   const hooks: Record<string, unknown> = {};
-  const chains = new Map<string, Array<(arg: unknown) => Promise<unknown>>>();
+  const chains = new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>();
 
   const register = (name: string, h: Record<string, unknown> | undefined) => {
     if (!h || typeof h !== "object") return;
@@ -259,7 +264,7 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
       if (typeof value !== "function") continue;
       if (CALLBACK_HOOKS.has(key)) {
         const chain = chains.get(key) ?? [];
-        chain.push(value as (arg: unknown) => Promise<unknown>);
+        chain.push(value as (...args: unknown[]) => Promise<unknown>);
         chains.set(key, chain);
         continue;
       }
@@ -311,18 +316,16 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   pruneCache(home, keep);
 
   // Chain the callbacks after every plugin has registered, so ordering is the
-  // filename order rather than the interleaving of import timing.
+  // filename order rather than the interleaving of import timing. Every hook in
+  // the chain receives the same arguments OpenCode passed this wrapper —
+  // OpenCode fans its own plugin hooks out as fn(input, output) and reads the
+  // mutation back off the shared output object, so a chain that threaded only
+  // the first argument would silently drop every output mutation.
   for (const [key, chain] of chains) {
     hooks[key] = async (...args: unknown[]) => {
-      let out = args[0];
-      // Each hook receives what the previous one returned, the way OpenCode
-      // threads its own hooks: the mutation target is the first argument and
-      // its return value is what the next plugin sees.
       for (const fn of chain) {
-        const next = await fn(out);
-        if (next !== undefined) out = next;
+        await fn(...args);
       }
-      return out;
     };
   }
 
