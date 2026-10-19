@@ -216,6 +216,75 @@ test("edited copies do not accumulate", async () => {
   r.cleanup();
 });
 
+test("every chained hook receives the full (input, output) pair", async () => {
+  // OpenCode fans its plugin hooks out as fn(input, output). A chain that
+  // threaded only the first argument silently dropped every output mutation —
+  // tool.execute.before hooks lost their args and chat.message hooks lost
+  // their parts, with no error anywhere. Both plugins below record what they
+  // were actually called with.
+  const r = rootWith();
+  const seen = path.join(r.home, "seen.log");
+  const recorder = (tag) => `
+import fs from "node:fs";
+export const Rec = async () => ({
+  "tool.execute.before": async (input, output) => {
+    fs.appendFileSync(${JSON.stringify(seen)}, ${JSON.stringify(tag + " input=")} + (input === undefined ? "missing" : "present") + " output=" + (output === undefined ? "missing" : "present") + "\\n");
+  },
+});
+`;
+  fs.writeFileSync(path.join(r.dir, "a-first.js"), recorder("a"));
+  fs.writeFileSync(path.join(r.dir, "b-second.js"), recorder("b"));
+
+  const hooks = await loadHooks();
+  await hooks["tool.execute.before"]({ tool: "write", sessionID: "ses_x", callID: "c1" }, { args: {} });
+
+  const lines = fs.readFileSync(seen, "utf8").trim().split("\n");
+  assert.deepEqual(
+    lines,
+    ["a input=present output=present", "b input=present output=present"],
+    "both hooks see both arguments, in filename order",
+  );
+  r.cleanup();
+});
+
+test("an output mutation survives the chain to the caller", async () => {
+  // The contract that matters: OpenCode reads the mutation back off the shared
+  // output object after the trigger returns. A chain that threaded return
+  // values instead would leave the caller's object untouched.
+  const r = rootWith();
+  fs.writeFileSync(
+    path.join(r.dir, "mut.js"),
+    `export const Mut = async () => ({
+  "tool.execute.before": async (input, output) => {
+    output.args.workdir = "/rewritten";
+  },
+});
+`,
+  );
+  fs.writeFileSync(
+    path.join(r.dir, "witness.js"),
+    `import fs from "node:fs";
+export const Wit = async () => ({
+  "tool.execute.before": async (input, output) => {
+    fs.appendFileSync(${JSON.stringify(path.join(r.home, "seen.log"))}, String(output?.args?.workdir) + "\\n");
+  },
+});
+`,
+  );
+
+  const hooks = await loadHooks();
+  const output = { args: {} };
+  await hooks["tool.execute.before"]({ tool: "bash", sessionID: "ses_x", callID: "c1" }, output);
+
+  assert.equal(output.args.workdir, "/rewritten", "the caller's object carries the mutation");
+  assert.equal(
+    fs.readFileSync(path.join(r.home, "seen.log"), "utf8").trim(),
+    "/rewritten",
+    "the later plugin observed the earlier plugin's mutation",
+  );
+  r.cleanup();
+});
+
 test("a PluginModule object export is loaded, not just a bare function", async () => {
   // Every plugin written against the current SDK exports `default { id, server }`,
   // which is not a function. Accepting only the bare-function shape makes a real
