@@ -823,6 +823,26 @@ test("doctor fails when the running harness loaded a different build", () => {
   }
 });
 
+test("doctor names a self-updating build as applying itself, not as a fault", () => {
+  // A build that can replace itself turns the mismatch into a moment in time:
+  // the running harness adopts the new build at its next idle moment. Calling
+  // that a failure would train the reader to ignore the line.
+  const m = machine();
+  try {
+    run(m, ["install", "opencode"]);
+    fs.writeFileSync(
+      path.join(m.home, ".doppler", "engine.loaded.json"),
+      `${JSON.stringify({ stamp: "deadbeefdeadbeef", pid: 1, loadedAt: "2026-10-17T09:00:00.000Z", selfUpdate: true })}\n`,
+    );
+    const r = run(m, ["doctor"]);
+    assert.equal(r.status, 0, out(r));
+    assert.match(out(r), /warn\s+engine build — OpenCode loaded build deadbeefdeadbeef/);
+    assert.match(out(r), /applies it at its next idle moment/);
+  } finally {
+    fs.rmSync(m.home, { recursive: true, force: true });
+  }
+});
+
 test("an unreadable engine record is no record, not a crash", () => {
   const m = machine();
   try {

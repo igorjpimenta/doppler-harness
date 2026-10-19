@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Config, Plugin, PluginInput } from "@opencode-ai/plugin";
 
@@ -516,11 +516,18 @@ const ENGINE_LOADED = "engine.loaded.json";
 // Content hash, not mtime+size: a rebuild that reproduces identical output is not
 // a change, and a same-length edit is. The value is deliberately coarse — it only
 // has to differ when the executed code does.
+//
+// The file is the one the build came from, not the one executing: a self-updating
+// copy runs from .engine-cache/, and its own bytes hash differently from the
+// installed file it was made from. Hashing the source keeps the value
+// comparable with what the installer computes for the installed file.
 function engineStamp(): string {
   try {
+    const dist = engineDistDir(paths().home, import.meta.url);
+    const file = dist ? path.join(dist, "doppler.js") : fileURLToPath(import.meta.url);
     return crypto
       .createHash("sha256")
-      .update(fs.readFileSync(fileURLToPath(import.meta.url)))
+      .update(fs.readFileSync(file))
       .digest("hex")
       .slice(0, 16);
   } catch {
@@ -539,6 +546,9 @@ function recordEngineLoad() {
         stamp: engineStamp(),
         pid: process.pid,
         loadedAt: new Date().toISOString(),
+        // A running build that knows how to replace itself says so, so `doctor`
+        // and `update` can stop telling it to restart for what it applies alone.
+        selfUpdate: true,
       }) + "\n",
     );
   } catch {
@@ -729,7 +739,10 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
       // ever feeds the comparison, and with the comparison gone it is a walk of
       // the user's skills tree for nothing.
       const current = automatic ? rootSnapshot() : snapshot;
-      if (!forced && current === snapshot) return;
+      // An engine update rides the same dispose: the rebuild re-invokes this
+      // hook, and the check inside adopts the new build before anything runs.
+      const engineStale = automatic && engineUpdateAvailable(home, ENGINE_SELF_URL, ENGINE_LOADED_HASH);
+      if (!forced && current === snapshot && !engineStale) return;
 
       // The three ways a pending change can be held, and when it becomes legal.
       // Each holds it until its own clock runs out rather than until the next
@@ -833,10 +846,202 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
   };
 }
 
+// --- begin mirrored engine self-update (identical in doppler.ts and loader.ts) ---
+//
+// A running harness never re-reads its plugin: a module is imported once and
+// cached for the life of the process. So each entry checks, on every fresh
+// invocation, whether the package on disk is newer than the code executing
+// now — and if so, executes a copy instead of itself. The copy is a whole
+// unit, not a file, so a mixed pair can never run; a query string would be the
+// obvious key and does not work (Bun normalizes it away), so the copy lives
+// under a content-derived directory and the import points at a filesystem
+// path, which is the one cache key every runtime honors.
+//
+// Why duplicated instead of shared: these entries load from dist/ but the test
+// suite imports them from source, where a shared module would not resolve
+// under Node's ESM loader. The suite asserts the two copies stay identical, so
+// a fix in one that misses the other fails loudly instead of diverging
+// silently.
+
+const ENGINE_SELF_URL = import.meta.url;
+const ENGINE_LOADED_HASH: string | null = engineLoadedHash(ENGINE_SELF_URL);
+
+// How long a superseded generation may linger. Time-based, not reference-
+// counted: a deleted generation is harmless — its module is already evaluated
+// — and age needs no cross-instance bookkeeping to be safe.
+const ENGINE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// Hidden, so the root snapshot never sees a copy (which would read as a change
+// and reload for itself). Pruned on adoption, never walked.
+function engineCacheDir(home: string): string {
+  return path.join(home, ".engine-cache");
+}
+
+// Content hash of every executable file in the directory: dotfiles and the
+// sidecar are not code and must not count, or a copy could never compare equal
+// to the unit it was made from and every check would re-adopt forever.
+function engineUnitHash(dir: string): string | null {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir).filter((n) => !n.startsWith(".") && n !== "source.json").sort();
+  } catch {
+    return null;
+  }
+  if (!names.length) return null;
+  try {
+    const h = crypto.createHash("sha256");
+    for (const n of names) {
+      h.update(n);
+      h.update(fs.readFileSync(path.join(dir, n)));
+    }
+    return h.digest("hex").slice(0, 16);
+  } catch {
+    return null;
+  }
+}
+
+// The build this module instance is executing, as a content hash. Captured once,
+// at import: re-reading your own files would always agree with the disk for an
+// original (same files), which is exactly the case that must read as stale
+// after an update.
+function engineLoadedHash(selfUrl: string): string | null {
+  try {
+    return engineUnitHash(path.dirname(fileURLToPath(selfUrl)));
+  } catch {
+    return null;
+  }
+}
+
+function readEngineSidecar(dir: string): string | null {
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(dir, "source.json"), "utf8")) as unknown;
+    if (v && typeof v === "object" && typeof (v as { dist?: unknown }).dist === "string") {
+      const dist = (v as { dist: string }).dist;
+      if (fs.statSync(dist).isDirectory()) return dist;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Where the package on disk lives, as this copy sees it. A first-load module
+// answers its own directory; a copy answers the sidecar its adoption wrote
+// beside it. DOPPLER_ENGINE_DIR overrides both, and exists for tests the way
+// DOPPLER_HOME does. Null means unresolvable — and unresolvable means serve
+// as-is, never refuse to run over a question about where an update would come
+// from.
+function engineDistDir(home: string, selfUrl: string): string | null {
+  if (process.env.DOPPLER_ENGINE_DIR) {
+    try {
+      if (fs.statSync(process.env.DOPPLER_ENGINE_DIR).isDirectory()) return process.env.DOPPLER_ENGINE_DIR;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  let selfDir: string;
+  try {
+    selfDir = path.dirname(fileURLToPath(selfUrl));
+  } catch {
+    return null;
+  }
+  if (path.dirname(selfDir) === engineCacheDir(home)) return readEngineSidecar(selfDir);
+  return selfDir;
+}
+
+// True when the package on disk is newer than the executing copy. Pure
+// observation — no copying, no importing — so the reload tick can ask it on
+// every pass and only dispose when the answer changes.
+function engineUpdateAvailable(home: string, selfUrl: string, loadedHash: string | null): boolean {
+  const dist = engineDistDir(home, selfUrl);
+  if (!dist) return false;
+  const theirs = engineUnitHash(dist);
+  if (!loadedHash || !theirs) return false;
+  return loadedHash !== theirs;
+}
+
+// Copy the on-disk unit into the cache and hand back the copy's URL for the
+// caller's own filename. The caller imports it and delegates — or, if the
+// import throws, keeps serving the running build and says so loudly. A copy
+// that fails to write is not a failure either: null means serve as-is, and the
+// next invocation asks again.
+function stageEngineUpdate(
+  home: string,
+  selfUrl: string,
+  fileName: string,
+  loadedHash: string | null,
+): string | null {
+  const dist = engineDistDir(home, selfUrl);
+  if (!dist) return null;
+  const theirs = engineUnitHash(dist);
+  if (!loadedHash || !theirs || loadedHash === theirs) return null;
+  const dest = path.join(engineCacheDir(home), theirs);
+  try {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const n of fs.readdirSync(dist)) {
+      if (n.startsWith(".") || n === "source.json") continue;
+      const src = path.join(dist, n);
+      if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(dest, n));
+    }
+    fs.writeFileSync(path.join(dest, "source.json"), JSON.stringify({ dist, hash: theirs }) + "\n");
+    // The read-back is the barrier: the copy is imported milliseconds after it
+    // is written, and a runtime that resolves the URL through a stale stat
+    // cache reports the just-written file as missing.
+    fs.readFileSync(path.join(dest, fileName));
+  } catch {
+    return null;
+  }
+  pruneEngineCache(home, theirs);
+  try {
+    return pathToFileURL(path.join(dest, fileName)).href;
+  } catch {
+    return null;
+  }
+}
+
+function pruneEngineCache(home: string, keep: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(engineCacheDir(home));
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  for (const n of names) {
+    if (n === keep) continue;
+    const full = path.join(engineCacheDir(home), n);
+    try {
+      if (now - fs.statSync(full).mtimeMs < ENGINE_CACHE_TTL_MS) continue;
+      fs.rmSync(full, { recursive: true, force: true });
+    } catch {
+      // A generation in use is already evaluated; a failed prune retries next time.
+    }
+  }
+}
+// --- end mirrored engine self-update ---
+
 export const DopplerHarness: Plugin = async (input) => {
   const { client } = input;
-  // First thing, before anything can report: the one fact `doctor` cannot
-  // otherwise know — which build this process is actually running.
+  // Self-update before anything else: if the package on disk is newer than this
+  // module, execute the copy instead and never start a watcher here — the copy
+  // starts its own. A copy that fails to import falls back to this one, so a
+  // broken build cannot take down the session it was meant to refresh.
+  const fresh = stageEngineUpdate(paths().home, ENGINE_SELF_URL, "doppler.js", ENGINE_LOADED_HASH);
+  if (fresh) {
+    try {
+      const mod = (await import(fresh)) as unknown as { DopplerHarness: Plugin };
+      return mod.DopplerHarness(input);
+    } catch (err) {
+      report(
+        `engine update available but the new build failed to load (${String((err as Error)?.message ?? err)}); staying on the running build`,
+        "warn",
+        client,
+      );
+    }
+  }
+  // First thing a running copy reports: the one fact `doctor` cannot otherwise
+  // know — which build this process is actually running.
   recordEngineLoad();
   // Fail-open means a broken runtime is indistinguishable from a permissive one
   // at runtime, so say so once, at the only moment the difference is visible.
@@ -981,4 +1186,12 @@ export default { id: "doppler", server: DopplerHarness };
 // silently costs a session restart, or one that silently fails to — and the only
 // place that can be asserted is from inside the module. Not part of the plugin
 // contract: OpenCode reads the default export and nothing else.
-export const internals = { rootSnapshot, startRefresh };
+export const internals = {
+  rootSnapshot,
+  startRefresh,
+  engineUnitHash,
+  engineLoadedHash,
+  engineDistDir,
+  engineUpdateAvailable,
+  stageEngineUpdate,
+};
