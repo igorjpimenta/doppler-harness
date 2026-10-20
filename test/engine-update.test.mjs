@@ -109,3 +109,39 @@ test("an unreadable package on disk reads as no update", async () => {
     delete process.env.DOPPLER_ENGINE_DIR;
   }
 });
+
+test("a broken build on disk does not take down the session", async () => {
+  // The update is executed, not trusted: a build that cannot even be imported
+  // must leave the running one serving, because the whole point of the
+  // mechanism is that a session survives an engine update.
+  const loader = await import("../opencode/loader.ts");
+  const home = homeFixture();
+  fs.mkdirSync(path.join(home, "plugins"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "plugins", "mine.js"),
+    "export const Mine = async () => ({ event: async () => {} });\n",
+  );
+  // The package on disk is the real build with its shared module broken: the
+  // entries import it, so the copy cannot load.
+  const dist = distFixture({
+    loader: fs.readFileSync(path.join(ROOT, "dist", "loader.js"), "utf8"),
+    doppler: fs.readFileSync(path.join(ROOT, "dist", "doppler.js"), "utf8"),
+  });
+  fs.writeFileSync(path.join(dist, "engine-update.js"), "this is not javascript (((\n");
+
+  const previous = process.env.DOPPLER_ENGINE_DIR;
+  const previousHome = process.env.DOPPLER_HOME;
+  process.env.DOPPLER_ENGINE_DIR = dist;
+  process.env.DOPPLER_HOME = home;
+  try {
+    const hooks = await loader.DopplerPluginLoader({ client: { app: { log: async () => {} } } });
+    assert.ok(hooks, "the loader answered instead of throwing");
+    const report = JSON.parse(fs.readFileSync(path.join(home, "plugins.loaded.json"), "utf8"));
+    assert.equal(report.plugins[0].ok, true, "and the personal plugin still loaded");
+  } finally {
+    if (previous === undefined) delete process.env.DOPPLER_ENGINE_DIR;
+    else process.env.DOPPLER_ENGINE_DIR = previous;
+    if (previousHome === undefined) delete process.env.DOPPLER_HOME;
+    else process.env.DOPPLER_HOME = previousHome;
+  }
+});

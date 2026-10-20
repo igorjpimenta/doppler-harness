@@ -192,8 +192,7 @@ function cachedCopy(home: string, dir: string, file: string, label: string, stam
     // Read-back before import: the copy is imported milliseconds after it is
     // written, and a runtime that resolves the URL through a stale stat cache
     // reports the just-written file as missing. Reading it through the same
-    // filesystem first is the barrier. Observed once live: the copy existed on
-    // disk and its own import failed with ENOENT.
+    // filesystem first is the barrier.
     fs.readFileSync(dest);
     return safe;
   } catch {
