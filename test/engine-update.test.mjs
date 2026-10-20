@@ -5,10 +5,10 @@
 // whether the package on disk is newer than the code executing now, and if so
 // executes a copy of the whole unit instead of itself.
 //
-// Two failure modes are worth pinning, because both are silent otherwise: the
-// two copies of the mechanism drifting apart (they are duplicated on purpose,
-// and a shared module cannot be imported from source-mode tests), and an update
-// that adopts a broken build.
+// Two failure modes are worth pinning, because both are silent otherwise: an
+// entry that carries its own copy of the mechanism instead of the shared one
+// (the copies drift, and only one of them heals), and an update that adopts a
+// broken build.
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -18,32 +18,29 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// The mirrored block, verbatim from each entry.
-function mirroredBlock(file) {
-  const s = fs.readFileSync(path.join(ROOT, "opencode", file), "utf8");
-  const a = s.indexOf("// --- begin mirrored");
-  const b = s.indexOf("// --- end mirrored");
-  assert.ok(a >= 0 && b > a, `${file} has no mirrored block`);
-  return s.slice(a, b);
-}
-
-test("the two copies of the mechanism are identical", () => {
-  // They are duplicated on purpose: these entries load from dist/ but the test
-  // suite imports them from source, where a shared module would not resolve
-  // under Node's ESM loader. The duplication is only safe while a test asserts
-  // it — otherwise a fix in one silently misses the other.
-  assert.equal(
-    mirroredBlock("doppler.ts"),
-    mirroredBlock("loader.ts"),
-    "doppler.ts and loader.ts must carry the same self-update block",
-  );
-});
-
-test("the mirrored block is inside both entries' markers", () => {
+test("both entries use the one shared implementation", () => {
+  // The mechanism lives in one file, and the two entries import it rather than
+  // carrying a copy each: a copy that missed a fix would be a different
+  // mechanism on the bridge than on the loader, and the difference would only
+  // show up as one of them not healing.
+  const shared = fs.readFileSync(path.join(ROOT, "opencode", "engine-update.ts"), "utf8");
+  assert.ok(shared.includes("export function stageEngineUpdate"), "the shared module has the mechanism");
   for (const file of ["doppler.ts", "loader.ts"]) {
     const s = fs.readFileSync(path.join(ROOT, "opencode", file), "utf8");
-    assert.equal(s.split("// --- begin mirrored").length - 1, 1, `${file} has one begin marker`);
-    assert.equal(s.split("// --- end mirrored").length - 1, 1, `${file} has one end marker`);
+    assert.match(s, /from "\.\/engine-update\.ts"/, `${file} imports the shared module`);
+    assert.equal(s.split("export function stageEngineUpdate").length - 1, 0, `${file} carries no copy of it`);
+  }
+});
+
+test("the build ships the shared module and the entries import it by its .js name", () => {
+  // What ships is what runs: the emitted JavaScript has to name the emitted
+  // file, or the package loads on the machine and not on the user's.
+  const dist = path.join(ROOT, "dist");
+  if (!fs.existsSync(path.join(dist, "doppler.js"))) return; // not built yet
+  assert.ok(fs.existsSync(path.join(dist, "engine-update.js")), "the shared module ships");
+  for (const file of ["doppler.js", "loader.js"]) {
+    const s = fs.readFileSync(path.join(dist, file), "utf8");
+    assert.match(s, /from "\.\/engine-update\.js"/, `${file} imports the shipped module`);
   }
 });
 

@@ -38,6 +38,9 @@ test("a running loader adopts the build that replaced it", async () => {
 
   fs.writeFileSync(path.join(installed, "loader.js"), loaderWithMarker(installed, "v1"));
   fs.copyFileSync(path.join(DIST, "doppler.js"), path.join(installed, "doppler.js"));
+  // The package is the whole dist: the entries import the shared module, and a
+  // copy of a unit missing one of its files is not a unit.
+  fs.copyFileSync(path.join(DIST, "engine-update.js"), path.join(installed, "engine-update.js"));
 
   // The child is the harness: it imports the installed entry once, calls it,
   // waits for the package on disk to change, and calls it again.
