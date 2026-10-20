@@ -281,10 +281,18 @@ made in the instant after one waits for that. Set `DOPPLER_RELOAD=off` to turn
 automatic reloading off — `doctor` reports which way it is set — and
 `doppler reload` still works, as does touching `~/.doppler/.reload`.
 
-The one thing that does still need a restart is a change to doppler's own code,
-which is why `doppler update` says so: Bun caches a plugin module for the life of
-the process, so a new bridge behind the same path is not picked up until the
-harness restarts.
+The one thing that used to need a restart was a change to doppler's own code:
+Bun caches a plugin module for the life of the process, so a new bridge behind
+the same path was not picked up until the harness restarted. The bridge now
+replaces itself — it notices that the installed package is newer than the code
+it is running and executes the new build from a copy, at the next idle moment,
+exactly like everything else. The copy is the whole unit (bridge and loader
+together) so a mixed pair can never run, and if the new build fails to load the
+running one keeps serving and says so.
+
+So does `doppler update` need a restart? No: a running harness picks the new
+build up at its next idle moment. A first install still needs one, because
+OpenCode loads the plugin list at startup.
 
 **How do I change the policy?** Edit `~/.doppler/policy/allowlist.json` for
 permission rules, or add a `.mjs` to `~/.doppler/hooks/` for anything else. Both

@@ -105,7 +105,9 @@ function pkgStamp(file) {
 function engineLoadedStamp() {
   try {
     const j = JSON.parse(fs.readFileSync(ENGINE_LOADED, "utf8"));
-    return j && typeof j.stamp === "string" ? { stamp: j.stamp, at: j.loadedAt, pid: j.pid } : null;
+    return j && typeof j.stamp === "string"
+      ? { stamp: j.stamp, at: j.loadedAt, pid: j.pid, selfUpdate: j.selfUpdate === true }
+      : null;
   } catch {
     return null;
   }
@@ -417,7 +419,7 @@ function verify() {
     sh(`${oc} debug config`);
     console.log(`bridge registered in ${ocConfigPath()} — config parses, hooks are live.`);
     console.log("restart opencode once, to load the bridge it has just registered.");
-    console.log("after that, editing your hooks, policy, agents, skills or plugins needs no restart.");
+    console.log("after that, nothing needs a restart — not your files, and not the engine itself.");
   } catch (e) {
     console.warn(`${ocConfigPath()} did not parse: ${String(e.message).split("\n")[0]}`);
     console.warn("  OpenCode will ignore it, so no doppler hooks will run. Fix the file, then re-run.");
@@ -623,7 +625,7 @@ async function update() {
       const r = register();
       if (r.changed) console.log(`re-registered: ${r.path} → ${entry()}`);
     }
-    console.log(`engine updated: ${installed} → ${tag}. restart opencode to pick it up.`);
+    console.log(`engine updated: ${installed} → ${tag}. a running opencode picks it up at its next idle moment.`);
     console.log("your own files do not need it — the bridge re-reads those on its own.");
   }
 
@@ -714,11 +716,21 @@ if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
     } else if (loadedStamp.stamp === "unknown") {
       warn("engine build", `the loaded bridge could not be fingerprinted — unknown which build ${BRIDGE} is`);
     } else if (loadedStamp.stamp !== pkgStamp(BRIDGE)) {
-      bad(
-        "engine build",
-        `OpenCode loaded build ${loadedStamp.stamp} (${loadedStamp.at}) but ${rel(BRIDGE)} on disk is ${pkgStamp(BRIDGE)}`,
-        "quit and reopen OpenCode — a running harness never re-reads its plugin",
-      );
+      // A build that knows how to replace itself applies the update at its next
+      // idle moment; the mismatch is a moment in time, not a fault. An older
+      // build cannot, so it stays a failure with the restart as the fix.
+      if (loadedStamp.selfUpdate) {
+        warn(
+          "engine build",
+          `OpenCode loaded build ${loadedStamp.stamp} (${loadedStamp.at}) and ${rel(BRIDGE)} on disk is ${pkgStamp(BRIDGE)} — the running harness applies it at its next idle moment`,
+        );
+      } else {
+        bad(
+          "engine build",
+          `OpenCode loaded build ${loadedStamp.stamp} (${loadedStamp.at}) but ${rel(BRIDGE)} on disk is ${pkgStamp(BRIDGE)}`,
+          "quit and reopen OpenCode — a running harness never re-reads its plugin",
+        );
+      }
     } else {
       ok("engine build", `${loadedStamp.stamp} — on disk and in the running harness agree`);
     }

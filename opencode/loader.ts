@@ -15,12 +15,15 @@
 // and what it does about a broken one is carry on: a personal root that has one
 // bad plugin is a session that should still work, not one that refuses to start.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
+
+import { engineLoadedHash, stageEngineUpdate } from "./engine-update.ts";
 
 // Where the personal root is, resolved the same way the bridge resolves it:
 // DOPPLER_HOME first (tests and alternate installs), else the pointer the
@@ -189,8 +192,7 @@ function cachedCopy(home: string, dir: string, file: string, label: string, stam
     // Read-back before import: the copy is imported milliseconds after it is
     // written, and a runtime that resolves the URL through a stale stat cache
     // reports the just-written file as missing. Reading it through the same
-    // filesystem first is the barrier. Observed once live: the copy existed on
-    // disk and its own import failed with ENOENT.
+    // filesystem first is the barrier.
     fs.readFileSync(dest);
     return safe;
   } catch {
@@ -242,8 +244,38 @@ function importTarget(
   return { url: pathToFileURL(full).href, cached: null };
 }
 
+
+// The build this entry is executing, and the directory it was loaded from.
+// Both are per-entry: the mechanism compares them against the package on disk
+// and stages a copy when they differ.
+const ENGINE_SELF_URL = import.meta.url;
+const ENGINE_LOADED_HASH: string | null = engineLoadedHash(ENGINE_SELF_URL);
+
 export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   const home = personalRoot();
+  // Self-update before anything else: if the package on disk is newer than this
+  // module, execute the copy instead. A copy that fails to import falls back to
+  // this one, so a broken build cannot take down the session it was meant to
+  // refresh.
+  const fresh = stageEngineUpdate(home, ENGINE_SELF_URL, "loader.js", ENGINE_LOADED_HASH);
+  if (fresh) {
+    try {
+      const mod = (await import(fresh)) as unknown as { DopplerPluginLoader: Plugin };
+      return mod.DopplerPluginLoader(input);
+    } catch (err) {
+      try {
+        await input.client?.app?.log?.({
+          body: {
+            service: "doppler-plugin-loader",
+            level: "warn",
+            message: `engine update available but the new build failed to load (${String((err as Error)?.message ?? err)}); staying on the running build`,
+          },
+        });
+      } catch {
+        // logging is not the job
+      }
+    }
+  }
   const dir = path.join(home, "plugins");
   const files = rootPlugins(home);
   const { known, hadReport } = lastStamps(home);

@@ -19,9 +19,17 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Config, Plugin, PluginInput } from "@opencode-ai/plugin";
+
+import {
+  engineDistDir,
+  engineLoadedHash,
+  engineUnitHash,
+  engineUpdateAvailable,
+  stageEngineUpdate,
+} from "./engine-update.ts";
 
 // The hooks are standalone node scripts, so exec them with node — NOT with
 // process.execPath. Under Bun, which is what OpenCode's plugin runtime is,
@@ -516,11 +524,18 @@ const ENGINE_LOADED = "engine.loaded.json";
 // Content hash, not mtime+size: a rebuild that reproduces identical output is not
 // a change, and a same-length edit is. The value is deliberately coarse — it only
 // has to differ when the executed code does.
+//
+// The file is the one the build came from, not the one executing: a self-updating
+// copy runs from .engine-cache/, and its own bytes hash differently from the
+// installed file it was made from. Hashing the source keeps the value
+// comparable with what the installer computes for the installed file.
 function engineStamp(): string {
   try {
+    const dist = engineDistDir(paths().home, import.meta.url);
+    const file = dist ? path.join(dist, "doppler.js") : fileURLToPath(import.meta.url);
     return crypto
       .createHash("sha256")
-      .update(fs.readFileSync(fileURLToPath(import.meta.url)))
+      .update(fs.readFileSync(file))
       .digest("hex")
       .slice(0, 16);
   } catch {
@@ -539,6 +554,9 @@ function recordEngineLoad() {
         stamp: engineStamp(),
         pid: process.pid,
         loadedAt: new Date().toISOString(),
+        // A running build that knows how to replace itself says so, so `doctor`
+        // and `update` can stop telling it to restart for what it applies alone.
+        selfUpdate: true,
       }) + "\n",
     );
   } catch {
@@ -729,7 +747,10 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
       // ever feeds the comparison, and with the comparison gone it is a walk of
       // the user's skills tree for nothing.
       const current = automatic ? rootSnapshot() : snapshot;
-      if (!forced && current === snapshot) return;
+      // An engine update rides the same dispose: the rebuild re-invokes this
+      // hook, and the check inside adopts the new build before anything runs.
+      const engineStale = automatic && engineUpdateAvailable(home, ENGINE_SELF_URL, ENGINE_LOADED_HASH);
+      if (!forced && current === snapshot && !engineStale) return;
 
       // The three ways a pending change can be held, and when it becomes legal.
       // Each holds it until its own clock runs out rather than until the next
@@ -833,10 +854,34 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
   };
 }
 
+
+// The build this entry is executing, and the directory it was loaded from.
+// Both are per-entry: the mechanism compares them against the package on disk
+// and stages a copy when they differ.
+const ENGINE_SELF_URL = import.meta.url;
+const ENGINE_LOADED_HASH: string | null = engineLoadedHash(ENGINE_SELF_URL);
+
 export const DopplerHarness: Plugin = async (input) => {
   const { client } = input;
-  // First thing, before anything can report: the one fact `doctor` cannot
-  // otherwise know — which build this process is actually running.
+  // Self-update before anything else: if the package on disk is newer than this
+  // module, execute the copy instead and never start a watcher here — the copy
+  // starts its own. A copy that fails to import falls back to this one, so a
+  // broken build cannot take down the session it was meant to refresh.
+  const fresh = stageEngineUpdate(paths().home, ENGINE_SELF_URL, "doppler.js", ENGINE_LOADED_HASH);
+  if (fresh) {
+    try {
+      const mod = (await import(fresh)) as unknown as { DopplerHarness: Plugin };
+      return mod.DopplerHarness(input);
+    } catch (err) {
+      report(
+        `engine update available but the new build failed to load (${String((err as Error)?.message ?? err)}); staying on the running build`,
+        "warn",
+        client,
+      );
+    }
+  }
+  // First thing a running copy reports: the one fact `doctor` cannot otherwise
+  // know — which build this process is actually running.
   recordEngineLoad();
   // Fail-open means a broken runtime is indistinguishable from a permissive one
   // at runtime, so say so once, at the only moment the difference is visible.
@@ -981,4 +1026,12 @@ export default { id: "doppler", server: DopplerHarness };
 // silently costs a session restart, or one that silently fails to — and the only
 // place that can be asserted is from inside the module. Not part of the plugin
 // contract: OpenCode reads the default export and nothing else.
-export const internals = { rootSnapshot, startRefresh };
+export const internals = {
+  rootSnapshot,
+  startRefresh,
+  engineUnitHash,
+  engineLoadedHash,
+  engineDistDir,
+  engineUpdateAvailable,
+  stageEngineUpdate,
+};

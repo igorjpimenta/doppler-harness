@@ -22,6 +22,15 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
+    // Relative imports may name the .ts file they come from, and the build
+    // rewrites the extension: the source is checked as written, and the emitted
+    // JavaScript imports the .js next to it. Without this a shared module
+    // would have to be duplicated into every entry that uses it, because the
+    // source-mode test runner resolves a .js specifier to a file that does
+    // not exist.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
     // Build output. The .ts is the checked source; dist/doppler.mjs is what
     // ships, because the desktop app's server runs under Node and Node refuses
     // to strip types for a file under node_modules. Bun (the TUI/CLI) would
