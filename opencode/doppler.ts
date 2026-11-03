@@ -1013,13 +1013,358 @@ export const DopplerHarness: Plugin = async (input) => {
   };
 };
 
+// --- OpenCode 2 entry --------------------------------------------------------
+//
+// V1 returns one hooks object; v2 hands setup() a context and each hook is
+// registered on the domain that owns it. The two entries share this module so
+// enforcement, policy compilation and the engine stamp cannot drift between
+// them, but they register independently: v2 ignores server() and v1 ignores
+// setup().
+//
+// The types below are structural on purpose. The package keeps no runtime
+// dependency on @opencode/plugin, and a plugin API still in beta is a moving
+// target: a missing method is a capability this build reports instead of a
+// module that fails to import.
+
+type V2Registration = { dispose: () => Promise<void> | void };
+
+type V2SkillEditor = {
+  list: () => readonly Record<string, unknown>[];
+  get: (id: string) => Record<string, unknown> | undefined;
+  add: (skill: Record<string, unknown>) => void;
+};
+
+type V2Context = {
+  app?: { version?: string };
+  location?: { directory?: string };
+  options?: Record<string, unknown>;
+  skill?: {
+    transform?: (callback: (editor: V2SkillEditor) => void) => Promise<V2Registration>;
+    reload?: () => Promise<void>;
+  };
+  permission?: {
+    hook?: (
+      name: "evaluate",
+      callback: (event: {
+        action: string;
+        resources: readonly string[];
+        effect: string;
+        message?: string;
+      }) => void | Promise<void>,
+    ) => Promise<V2Registration>;
+  };
+  session?: {
+    hook?: (
+      name: "context",
+      callback: (event: { system: Array<{ type: "text"; text: string }> }) => void,
+    ) => Promise<V2Registration>;
+  };
+  tool?: {
+    hook?: (
+      name: "execute.before",
+      callback: (event: { tool: string; sessionID: unknown; input: unknown }) => void,
+    ) => Promise<V2Registration>;
+  };
+  event?: {
+    subscribe?: (options: {
+      signal: AbortSignal;
+    }) => AsyncIterable<{ type?: string; properties?: { info?: { id?: string } } }>;
+  };
+};
+
+type RootSkill = {
+  id: string;
+  name: string;
+  description?: string;
+  path: string;
+  content: string;
+};
+
+// Frontmatter is the same flat `key: value` shape the agent reader accepts, but
+// skills only need the two fields OpenCode displays; the body is the skill.
+function parseSkill(text: string, fallback: string): Omit<RootSkill, "id" | "path"> {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
+  const body = (m ? m[2] : text).trim();
+  const data: Record<string, string> = {};
+  if (m) {
+    for (const line of m[1].split(/\r?\n/)) {
+      const idx = line.indexOf(":");
+      if (idx < 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+      if (key) data[key] = value;
+    }
+  }
+  return { name: data.name || fallback, description: data.description || undefined, content: body };
+}
+
+// One skill per directory holding SKILL.md, in sorted order. Depth is fixed at
+// one: the personal root's skills/ is a catalogue, not a tree to walk.
+function readSkillRoots(): RootSkill[] {
+  const out: RootSkill[] = [];
+  const seen = new Set<string>();
+  for (const root of [paths().skills, ...overlaySkillRoots()]) {
+    let names: string[];
+    try {
+      names = fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      const file = path.join(root, name, "SKILL.md");
+      let text: string;
+      try {
+        text = fs.readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      const parsed = parseSkill(text, name);
+      if (!parsed.content) continue;
+      seen.add(name);
+      out.push({ id: name, ...parsed, path: file });
+    }
+  }
+  return out;
+}
+
+// Both the allowlist and the root AGENTS.md are read on the hot path (one per
+// permission decision, one per model request). Cached by mtime so an edit is
+// visible without a restart, and a session with no edits pays a stat, not a
+// parse.
+let permissionCache: { mtimeMs: number; rules: Record<string, unknown> | null } | undefined;
+let instructionCache: { mtimeMs: number; text: string } | undefined;
+
+function permissionRules(): Record<string, unknown> | null {
+  const file = path.join(paths().home, "policy", "allowlist.json");
+  let mtimeMs: number;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    permissionCache = undefined;
+    return null;
+  }
+  if (permissionCache?.mtimeMs !== mtimeMs) {
+    permissionCache = { mtimeMs, rules: compiledPermission() };
+  }
+  return permissionCache.rules;
+}
+
+function rootInstructions(): string {
+  const file = path.join(paths().home, "AGENTS.md");
+  if (fs.existsSync(globalAgentsMd())) return "";
+  let mtimeMs: number;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    instructionCache = undefined;
+    return "";
+  }
+  if (instructionCache?.mtimeMs !== mtimeMs) {
+    try {
+      instructionCache = { mtimeMs, text: fs.readFileSync(file, "utf8").trim() };
+    } catch {
+      instructionCache = undefined;
+      return "";
+    }
+  }
+  return instructionCache.text;
+}
+
+// The allowlist is written in v1's vocabulary (`bash`), and v2 renamed the
+// actions that reach the evaluate hook. Only the aliases with a known
+// equivalent are mapped; an action with no entry keeps the host's decision.
+const V2_ACTION_ALIAS: Record<string, string> = { shell: "bash", subagent: "task" };
+
+function globMatches(pattern: string, subject: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+  try {
+    return new RegExp(`^${escaped}$`).test(subject);
+  } catch {
+    return false;
+  }
+}
+
+function v2Effect(action: string, resources: readonly string[]): "allow" | "ask" | "deny" | undefined {
+  const rules = permissionRules();
+  if (!rules) return undefined;
+  const key = action in rules ? action : V2_ACTION_ALIAS[action];
+  if (!key || !(key in rules)) return undefined;
+  const rule = rules[key];
+  if (typeof rule === "string") return rule === "deny" || rule === "ask" ? rule : undefined;
+  if (!rule || typeof rule !== "object") return undefined;
+  const subject = resources.filter((r): r is string => typeof r === "string").join(" ");
+  // Last match wins, matching the host engine: a broad allow must not swallow
+  // a narrower ask that was appended after it.
+  let effect: "allow" | "ask" | "deny" | undefined;
+  for (const [pattern, value] of Object.entries(rule as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    if (globMatches(pattern, subject)) effect = value as "allow" | "ask" | "deny";
+  }
+  return effect;
+}
+
+async function setupV2(ctx: V2Context): Promise<() => void> {
+  const fresh = stageEngineUpdate(paths().home, ENGINE_SELF_URL, "doppler.js", ENGINE_LOADED_HASH);
+  if (fresh) {
+    try {
+      const mod = (await import(fresh)) as unknown as {
+        default?: { setup?: (context: V2Context) => Promise<() => void> };
+      };
+      if (typeof mod.default?.setup === "function") return await mod.default.setup(ctx);
+    } catch (err) {
+      report(
+        `engine update available but the new build failed to load (${String((err as Error)?.message ?? err)}); staying on the running build`,
+        "warn",
+      );
+    }
+  }
+  recordEngineLoad();
+
+  if (!nodeUsable()) {
+    report(
+      `cannot run node (${NODE}), so every policy hook is inert — install ` +
+        "Node 18+ on PATH or set DOPPLER_NODE. Nothing is being enforced.",
+      "error",
+    );
+  } else if (hookFiles().length === 0) {
+    report(
+      `no hooks in ${paths().hooks}, so nothing is being enforced. Expected if ` +
+        "you have not written any; see the README for the protocol.",
+      "warn",
+    );
+  }
+
+  // v2 exposes agent read/update only — there is no registration call, so a
+  // root agent cannot be added. Say which ones stayed behind instead of
+  // letting a session run with an agent set it never loaded.
+  const agents = readAgents();
+  if (agents.length) {
+    report(
+      `OpenCode 2 has no agent registration API; ${agents.length} personal agent(s) not loaded: ` +
+        agents.map((agent) => agent.name).join(", "),
+      "warn",
+    );
+  }
+
+  const controller = new AbortController();
+  let skillRegistration: V2Registration | undefined;
+
+  async function applySkills() {
+    const skill = ctx.skill;
+    if (!skill?.transform) return;
+    try {
+      await skillRegistration?.dispose?.();
+      const skills = readSkillRoots();
+      skillRegistration = await skill.transform((editor) => {
+        for (const entry of skills) {
+          // The user's own skill of the same id wins, as it does for agents.
+          if (editor.get(entry.id)) continue;
+          editor.add({ ...entry, description: entry.description });
+        }
+      });
+      await skill.reload?.();
+    } catch {
+      report("could not register personal skills with OpenCode 2; they stay unloaded", "warn");
+    }
+  }
+
+  await applySkills();
+
+  if (ctx.permission?.hook) {
+    await ctx.permission.hook("evaluate", (event) => {
+      const effect = v2Effect(event.action, event.resources);
+      if (!effect) return;
+      // Never widen a decision the host made: allow is the host's default and
+      // an explicit deny never reaches this hook. Only ask/deny are doppler's.
+      if (effect === "deny" || effect === "ask") event.effect = effect;
+    });
+  }
+
+  if (ctx.session?.hook) {
+    await ctx.session.hook("context", (event) => {
+      const text = rootInstructions();
+      if (!text) return;
+      if (event.system.some((part) => part.type === "text" && part.text === text)) return;
+      event.system.push({ type: "text", text });
+    });
+  }
+
+  if (ctx.tool?.hook) {
+    await ctx.tool.hook("execute.before", (event) => {
+      enforce({ tool: event.tool, sessionID: String(event.sessionID) }, { args: event.input });
+    });
+  }
+
+  // Skill edits are the only surface v2 can adopt in place: permissions and
+  // instructions are cached by mtime, so they follow an edit on the next read.
+  const watchers: fs.FSWatcher[] = [];
+  let debounce: ReturnType<typeof setTimeout> | undefined;
+  const poke = () => {
+    if (debounce) clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      debounce = undefined;
+      void applySkills();
+      if (engineUpdateAvailable(paths().home, ENGINE_SELF_URL, ENGINE_LOADED_HASH)) {
+        report("a newer engine is on disk; restart OpenCode to adopt it", "info");
+      }
+    }, 250);
+    debounce.unref?.();
+  };
+  for (const target of [paths().home, ...overlaySkillRoots()]) {
+    try {
+      const watcher = fs.watch(target, { recursive: true, persistent: false }, poke);
+      watcher.on("error", () => {});
+      watchers.push(watcher);
+    } catch {
+      // Unwatchable root: skills follow on the next session start.
+    }
+  }
+
+  const subscribe = ctx.event?.subscribe;
+  if (subscribe) {
+    void (async () => {
+      try {
+        for await (const event of subscribe({ signal: controller.signal })) {
+          if (event?.type !== "session.created") continue;
+          const id = event.properties?.info?.id;
+          if (!id) continue;
+          const payload = { session_id: id, event: "session.created" };
+          for (const file of hookFiles()) {
+            runHook(path.join(paths().hooks, file), payload);
+          }
+        }
+      } catch {
+        // The stream ending is the plugin unloading, not a failure to report.
+      }
+    })();
+  }
+
+  return () => {
+    controller.abort();
+    if (debounce) clearTimeout(debounce);
+    for (const watcher of watchers) {
+      try {
+        watcher.close();
+      } catch {
+        // already closed
+      }
+    }
+    void skillRegistration?.dispose?.();
+  };
+}
+
 // The bridge declares its id so the installer can tell it from a plugin the
 // user wrote to replace it: OpenCode loads every registered plugin and does not
 // dedup by id, so "doppler is the secondary option" is doppler's own check, not
 // the harness's. A same-id plugin already registered means the user's is the
 // primary and this bridge stays dormant. The id is a stable contract — the
 // installer matches on it, and a user replacing doppler names theirs the same.
-export default { id: "doppler", server: DopplerHarness };
+export default { id: "doppler", setup: setupV2, server: DopplerHarness };
 
 // The refresh internals, for the test suite. What counts as a change worth
 // reloading for is a claim the bridge makes on the user's behalf — an edit that

@@ -701,6 +701,31 @@ test("plugin register coexists with the bridge and with the user's own plugins",
   assert.ok(after.plugin.includes("some-user-plugin"), "the user's own plugin is untouched");
 });
 
+test("install registers the directory entry OpenCode 2 reads, beside the V1 file entry", () => {
+  // V2 resolves a local plugin as a directory and skips a file entry, so the
+  // same install has to satisfy both runtimes from one config file.
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  const cfg = configOf(m);
+  assert.equal(cfg.plugin.length, 1, "the V1 entry is still a file URL");
+  assert.match(cfg.plugin[0], /dist\/doppler\.js$/);
+  assert.equal(cfg.plugins.length, 1, "the V2 entry is a directory");
+  assert.match(cfg.plugins[0], /\/v2$/);
+  assert.ok(fs.existsSync(path.join(cfg.plugins[0], "index.js")), "the directory carries its entry");
+
+  const again = run(m, ["install", "opencode"]);
+  assert.match(out(again), /already registered: .*OpenCode 2/, "idempotent");
+  assert.equal(configOf(m).plugins.length, 1);
+});
+
+test("uninstall removes the OpenCode 2 entry as well", () => {
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  const r = run(m, ["uninstall", "opencode"]);
+  assert.match(out(r), /removed: doppler OpenCode 2 entry/);
+  assert.equal(configOf(m).plugins?.length ?? 0, 0);
+});
+
 test("uninstall removes the loader entry as well as the bridge", () => {
   // Leaving the loader registered would keep loading the root's plugins after
   // "uninstall", which makes the command a lie.

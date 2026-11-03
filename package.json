@@ -1,7 +1,7 @@
 {
   "name": "@igorjpimenta/doppler-harness",
   "version": "2026.10.19-beta.2",
-  "description": "One config root for every coding agent \u2014 connect OpenCode with a single CLI command. No symlinks, no copies.",
+  "description": "One config root for every coding agent — connect OpenCode with a single CLI command. No symlinks, no copies.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,8 @@
     "AGENTS.md",
     "LICENSE",
     "install.sh",
-    "dist"
+    "dist",
+    "v2"
   ],
   "keywords": [
     "ai",
