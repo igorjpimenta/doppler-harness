@@ -1,4 +1,4 @@
-// v2-setup.test.mjs — the V2 setup() half of the bridge: every injection the
+// setup.test.mjs — the entry half of the bridge: every injection the
 // config hook made, registered through the domain that owns it, plus the
 // enforcement path unchanged. Same isolation as bridge.test.mjs: DOPPLER_HOME
 // and HOME/XDG are faked so no test can reach the real personal root.
@@ -13,7 +13,7 @@ import test from "node:test";
 import dopplerDefault, { setup } from "../opencode/doppler.ts";
 
 function rootWith({ policy = {}, skills = {}, globalAgentsMd = null, agentsMd = null } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-v2-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-setup-"));
   fs.mkdirSync(path.join(home, "policy"), { recursive: true });
   for (const d of ["hooks", "agents", "skills", "plugins"]) {
     fs.mkdirSync(path.join(home, d), { recursive: true });
@@ -27,7 +27,7 @@ function rootWith({ policy = {}, skills = {}, globalAgentsMd = null, agentsMd = 
     fs.writeFileSync(path.join(home, "policy", name), body);
   }
   if (agentsMd !== null) fs.writeFileSync(path.join(home, "AGENTS.md"), agentsMd);
-  const fakeProcessHome = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-v2-user-"));
+  const fakeProcessHome = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-setup-user-"));
   if (globalAgentsMd !== null) {
     fs.mkdirSync(path.join(fakeProcessHome, ".config", "opencode"), { recursive: true });
     fs.writeFileSync(path.join(fakeProcessHome, ".config", "opencode", "AGENTS.md"), globalAgentsMd);
@@ -57,7 +57,7 @@ async function withRoot(spec, fn) {
   }
 }
 
-// The V2 context, recorded: every registration lands in `captured`, every
+// The host context, recorded: every registration lands in `captured`, every
 // editor add in `added`. event.subscribe returns an iterator that ends on
 // abort, so setup's void'd loop settles when cleanup runs.
 function mockCtx() {
@@ -125,7 +125,7 @@ test("setup registers enforcement and the event subscription, and cleanup aborts
   });
 });
 
-test("a deny hook still stops a tool call through the V2 path", async () => {
+test("a deny hook still stops a tool call through the entry", async () => {
   const denyHook = `#!/usr/bin/env node
 import fs from "node:fs";
 const payload = JSON.parse(fs.readFileSync(0, "utf8"));

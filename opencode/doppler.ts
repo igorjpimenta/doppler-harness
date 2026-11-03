@@ -23,24 +23,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Config, Plugin, PluginInput } from "@opencode-ai/plugin";
 
-// Structural shape of the V2 plugin context, limited to what setup() calls.
+// Structural shape of the plugin context setup() receives, limited to what it calls.
 // Declared locally so the bridge keeps zero runtime dependency on either SDK:
-// V1 reads this module through server(), V2 through setup(), and both export
-// from the same default object.
-interface V2EvaluateEvent {
+// Legacy v1 hosts read this module through server(), current hosts through
+// setup(); both export from the same default object.
+interface EvaluateEvent {
   sessionID: string;
   agent?: string;
   action: string;
   resources: readonly string[];
   effect: "allow" | "deny" | "ask";
 }
-interface V2Ctx {
+interface SetupCtx {
   agent: { transform(cb: (editor: {
     list(): unknown[];
     get(id: string): unknown;
     add(info: Record<string, unknown>): void;
   }) => void): Promise<unknown> };
-  permission: { hook(name: "evaluate", cb: (e: V2EvaluateEvent) => void): Promise<unknown> };
+  permission: { hook(name: "evaluate", cb: (e: EvaluateEvent) => void): Promise<unknown> };
   skill: { transform(cb: (editor: {
     add(skill: Record<string, unknown>): void;
   }) => void): Promise<unknown> };
@@ -1058,12 +1058,12 @@ export const DopplerHarness: Plugin = async (input) => {
 
 // --- The entry: setup() ------------------------------------------------------
 //
-// setup() is the bridge. V2 hosts read it from the default export; V1 hosts
-// call the legacy server() further down and get the object-hook form of the
-// same behavior. V2 has no config hook: every injection the V1 config hook
-// made moves to the domain that owns it, best-effort, keeping the same
-// contract — a broken personal root degrades to "no doppler", never to
-// "opencode will not boot". Enforcement is unchanged: enforce() re-reads the
+// setup() is the bridge: hosts read it from the default export, and the
+// legacy server() further down gives a v1 host the object-hook form of the
+// same behavior. There is no config hook on this path: every injection the
+// v1 config hook made moves to the domain that owns it, best-effort, keeping
+// the same contract — a broken personal root degrades to "no doppler", never
+// to "opencode will not boot". Enforcement is unchanged: enforce() re-reads the
 // hook directory per call, and the ask-prompt path (a hook's declared asks,
 // which V1 compiled into config.permission) moves to the permission evaluate
 // hook, where the host raises the prompt itself.
@@ -1088,7 +1088,8 @@ function globMatch(pattern: string, value: string): boolean {
 // allowlist → ordered effect triples. Order mirrors compiledPermission: tool
 // allows first, then bash patterns allow → ask → declared-ask → deny last, so
 // a deny outranks an overlapping ask under the host's last-match-wins rule.
-// Both bash and shell actions are emitted: V2 spells the action either way.
+// Both bash and shell actions are emitted: the host may spell the action
+// either way.
 function permissionEffects(): Array<{ action: string; resource: string; effect: "allow" | "deny" | "ask" }> {
   const rules = compiledPermission();
   if (!rules) return [];
@@ -1147,7 +1148,7 @@ function discoverSkills(roots: string[]): Array<Record<string, unknown>> {
   return out;
 }
 
-export async function setup(ctx: V2Ctx): Promise<() => void> {
+export async function setup(ctx: SetupCtx): Promise<() => void> {
   try {
     const roots = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
     const skills = discoverSkills(roots);
@@ -1226,8 +1227,8 @@ export async function setup(ctx: V2Ctx): Promise<() => void> {
 }
 
 // setup() first: it is the entry. server() is the legacy V1 path, kept until
-// the v1 support window closes — V1 hosts never call setup, V2 never calls
-// server.
+// the v1 support window closes — a legacy host never calls setup, a current
+// host never calls server.
 export default { id: "doppler", setup, server: DopplerHarness };
 
 // The refresh internals, for the test suite. What counts as a change worth

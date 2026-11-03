@@ -182,9 +182,9 @@ package root
 ```
 
 **Entry points.** The bridge's default export leads with `setup()` — that is
-the entry, and it is what opencode v2 reads. `server()` is the legacy form for
+the entry, and it is what a current opencode reads. `server()` is the legacy form for
 opencode 1.x, kept until that support window closes: a v1 host never calls
-`setup`, a v2 host never calls `server`, and both return the same behavior in
+`setup`, a current host never calls `server`, and both return the same behavior in
 the shape their host expects.
 
 The package ships no content. `install` creates the directories, seeds the
