@@ -176,7 +176,16 @@ Automatic live refresh can be turned off with `DOPPLER_RELOAD=off`, which leaves
   .reload                         generated: bumped by `doppler reload`
 
 package root
-  opencode/doppler.ts             the ONLY file that knows OpenCode exists
+  opencode/                       the bridge — the only code that knows OpenCode exists
+    doppler.ts                    the entry: default export (setup + legacy server), internals
+    setup.ts                      the entry body: domain injections, enforcement wiring
+    policy.ts                     hook protocol, enforce(), allowlist → permission effects
+    agents.ts                     personal agents: frontmatter parsing and discovery
+    paths.ts                      the personal root and what lives in it
+    report.ts                     stderr + host logging
+    refresh.ts                    legacy live-refresh watcher (v1 hosts)
+    engine-update.ts              self-update
+    loader.ts                     composes ~/.doppler/plugins/*.mjs
   bin/doppler.mjs                 the installer
   policy/*.example.*              formats and worked examples, seeded on first run
 ```
