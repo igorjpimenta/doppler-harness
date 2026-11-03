@@ -23,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 
-import { engineLoadedHash, stageEngineUpdate } from "./engine-update.ts";
+import { engineLoadedHash, stageEngineUpdate } from "../engine-update.ts";
 
 // Where the personal root is, resolved the same way the bridge resolves it:
 // DOPPLER_HOME first (tests and alternate installs), else the pointer the

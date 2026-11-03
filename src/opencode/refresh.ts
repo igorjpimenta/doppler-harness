@@ -7,9 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PluginInput } from "@opencode-ai/plugin";
-import { paths, overlaySkillRoots } from "./paths.ts";
-import { report } from "./report.ts";
-import { engineDistDir, engineUpdateAvailable } from "./engine-update.ts";
+import { paths, overlaySkillRoots } from "../paths.ts";
+import { report } from "../report.ts";
+import { engineDistDir, engineUpdateAvailable } from "../engine-update.ts";
 
 
 // --- live refresh ------------------------------------------------------------
@@ -188,7 +188,7 @@ export function rootSnapshot(): string {
   // plugins/ IS walked, unlike hooks/. A hook body is exec'd per tool call and
   // therefore already live, but a plugin module is imported once and cached for
   // the life of the process — the loader re-imports a plugin whose stamp changed
-  // (opencode/loader.ts), so a plugin edit has to read as a change here or the
+  // (src/opencode/loader.ts), so a plugin edit has to read as a change here or the
   // rebuilt instance would keep running the cached copy. Only the files the
   // loader would load count, so a test edit does not cost a reload. The filter
   // duplicates the loader's rather than importing it: tests import this file

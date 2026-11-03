@@ -16,7 +16,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
 
 // The product's own reader, so the assertions cannot be fooled by a config
@@ -344,7 +344,7 @@ test("doctor does not report a branch from a repo the package merely sits inside
     for (const f of ["doppler.mjs", "jsonc.mjs", "update-core.mjs"]) {
       fs.copyFileSync(path.join(ROOT, "bin", f), path.join(pkg, "bin", f));
     }
-    fs.cpSync(path.join(ROOT, "opencode"), path.join(pkg, "opencode"), { recursive: true });
+    fs.cpSync(path.join(ROOT, "src"), path.join(pkg, "src"), { recursive: true });
     fs.copyFileSync(path.join(ROOT, "package.json"), path.join(pkg, "package.json"));
     const gitStub = path.join(m.home, "git-stub");
     fs.writeFileSync(gitStub, `#!/bin/sh

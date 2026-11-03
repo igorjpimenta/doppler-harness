@@ -87,7 +87,7 @@ const LOADER = path.join(PKG, "dist", "loader.js");
 // status` can answer the question the config cannot: did anything actually run?
 const PLUGIN_REPORT = path.join(HOME, "plugins.loaded.json");
 
-// Same hash the bridge writes of itself at load (opencode/doppler.ts), so the two
+// Same hash the bridge writes of itself at load (src/opencode/doppler.ts), so the two
 // sides compare like for like. Truncated to 16 hex chars: the value only has to
 // differ when the code differs, and a collision there is not a realistic failure.
 const ENGINE_LOADED = path.join(HOME, "engine.loaded.json");
@@ -113,7 +113,7 @@ function engineLoadedStamp() {
   }
 }
 
-// The bridge's declared id (opencode/doppler.ts exports it as a PluginModule).
+// The bridge's declared id (src/opencode/doppler.ts exports it as a PluginModule).
 // OpenCode loads every registered plugin and does not dedup by id, so "doppler
 // is the secondary option" is this installer's check, not the harness's: before
 // registering, load each existing plugin and read its id. A same-id plugin

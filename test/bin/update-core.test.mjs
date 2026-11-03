@@ -12,7 +12,7 @@ import {
   newerTag,
   parseTag,
   tagsFromLsRemote,
-} from "../bin/update-core.mjs";
+} from "../../bin/update-core.mjs";
 
 test("parseTag accepts stable, -beta.N, and the legacy bare -N", () => {
   assert.deepEqual(parseTag("2026.10.15"), { y: 2026, m: 10, d: 15, n: 0 });

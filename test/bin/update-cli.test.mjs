@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
 const { stringElements, topLevelValueSpan } = await import(path.join(ROOT, "bin", "jsonc.mjs"));
 import { fileURLToPath } from "node:url";

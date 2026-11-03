@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import dopplerDefault, { setup } from "../opencode/doppler.ts";
+import dopplerDefault, { setup } from "../../src/opencode/doppler.ts";
 
 function rootWith({ policy = {}, skills = {}, globalAgentsMd = null, agentsMd = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-setup-"));

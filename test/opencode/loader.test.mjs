@@ -1,4 +1,4 @@
-// Tests for the plugin loader (opencode/loader.ts).
+// Tests for the plugin loader (src/opencode/loader.ts).
 //
 // The loader's whole job is to do at startup what no plugin can do for itself:
 // find the personal root's plugins and run them. Its contract has three failure
@@ -12,7 +12,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const LOADER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "loader.js");
+const LOADER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist", "loader.js");
 
 // A personal root holding exactly the plugins a test names. DOPPLER_HOME is the
 // resolver's first choice, so no test can reach the real root.
