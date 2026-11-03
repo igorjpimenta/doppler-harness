@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import dopplerDefault, { setupV2 } from "../opencode/doppler.ts";
+import dopplerDefault, { setup } from "../opencode/doppler.ts";
 
 function rootWith({ policy = {}, skills = {}, globalAgentsMd = null, agentsMd = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-v2-"));
@@ -108,16 +108,16 @@ function mockCtx() {
   };
 }
 
-test("the default export carries both entrypoints", () => {
+test("the default export leads with setup and keeps server as the legacy path", () => {
   assert.equal(dopplerDefault.id, "doppler");
   assert.equal(typeof dopplerDefault.server, "function");
-  assert.equal(dopplerDefault.setup, setupV2);
+  assert.equal(dopplerDefault.setup, setup);
 });
 
 test("setup registers enforcement and the event subscription, and cleanup aborts", async () => {
   await withRoot({}, async () => {
     const ctx = mockCtx();
-    const cleanup = await setupV2(ctx);
+    const cleanup = await setup(ctx);
     assert.equal(typeof ctx.captured.toolBefore, "function", "execute.before registered");
     assert.equal(ctx.captured.eventSubscribed, true, "event subscription opened");
     assert.equal(typeof cleanup, "function");
@@ -134,7 +134,7 @@ process.stdout.write(JSON.stringify({ decision: "deny", reason: "hook says deny"
   await withRoot({ hooks: {} }, async (home) => {
     fs.writeFileSync(path.join(home, "hooks", "deny.mjs"), denyHook);
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.throws(
       () => ctx.captured.toolBefore({ tool: "bash", sessionID: "ses_1", input: { command: "ls" } }),
       /hook says deny/
@@ -145,7 +145,7 @@ process.stdout.write(JSON.stringify({ decision: "deny", reason: "hook says deny"
 test("with no hooks, enforcement is silent", async () => {
   await withRoot({}, async () => {
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     ctx.captured.toolBefore({ tool: "bash", sessionID: "ses_1", input: { command: "ls" } }); // must not throw
   });
 });
@@ -158,7 +158,7 @@ test("the evaluate hook applies allowlist effects with last-match-wins", async (
   });
   await withRoot({ policy: { "allowlist.json": allowlist } }, async () => {
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.equal(typeof ctx.captured.evaluate, "function", "evaluate registered");
 
     // tool allow, no pattern
@@ -193,7 +193,7 @@ Review the diff carefully.
   await withRoot({}, async (home) => {
     fs.writeFileSync(path.join(home, "agents", "reviewer.md"), agentMd);
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.equal(ctx.added.agents.length, 1, "one personal agent added");
     const a = ctx.added.agents[0];
     assert.equal(a.id, "doppler-reviewer");
@@ -208,7 +208,7 @@ Review the diff carefully.
 test("the root AGENTS.md is appended to every request when the user has none", async () => {
   await withRoot({ agentsMd: "Personal standing instructions." }, async () => {
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.equal(typeof ctx.captured.context, "function", "context hook registered");
     const system = [];
     ctx.captured.context({ sessionID: "ses_1", system });
@@ -220,7 +220,7 @@ test("the root AGENTS.md is appended to every request when the user has none", a
 test("a global AGENTS.md suppresses the root's, same precedence as V1", async () => {
   await withRoot({ agentsMd: "root wins?", globalAgentsMd: "user wins." }, async () => {
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.equal(ctx.captured.context, null, "no context hook when the user has global instructions");
   });
 });
@@ -234,7 +234,7 @@ Skill body.
 `;
   await withRoot({ skills: { review: skill } }, async () => {
     const ctx = mockCtx();
-    await setupV2(ctx);
+    await setup(ctx);
     assert.equal(ctx.added.skills.length, 1);
     const s = ctx.added.skills[0];
     assert.equal(s.id, "review");

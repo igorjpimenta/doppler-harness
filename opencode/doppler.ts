@@ -894,6 +894,9 @@ function startRefresh(input: PluginInput, client?: PluginInput["client"], timing
 const ENGINE_SELF_URL = import.meta.url;
 const ENGINE_LOADED_HASH: string | null = engineLoadedHash(ENGINE_SELF_URL);
 
+// LEGACY (V1 hosts only): the object-hook form of the bridge, returning
+// config/tool.execute.before/event/dispose for OpenCode 1.x. New behavior
+// lands in setup(); this path exists so a v1 host keeps working unchanged.
 export const DopplerHarness: Plugin = async (input) => {
   const { client } = input;
   // Self-update before anything else: if the package on disk is newer than this
@@ -1053,16 +1056,17 @@ export const DopplerHarness: Plugin = async (input) => {
 // primary and this bridge stays dormant. The id is a stable contract — the
 // installer matches on it, and a user replacing doppler names theirs the same.
 
-// --- V2 entry: setup() -------------------------------------------------------
+// --- The entry: setup() ------------------------------------------------------
 //
-// V1 reaches this module through server(); V2 reads the same default export's
-// id and setup(). V2 has no config hook: every injection the config hook made
-// moves to the domain that owns it, best-effort, keeping the same contract — a
-// broken personal root degrades to "no doppler", never to "opencode will not
-// boot". Enforcement is unchanged: enforce() re-reads the hook directory per
-// call, and the ask-prompt path (a hook's declared asks, which V1 compiled
-// into config.permission) moves to the permission evaluate hook, where the
-// host raises the prompt itself.
+// setup() is the bridge. V2 hosts read it from the default export; V1 hosts
+// call the legacy server() further down and get the object-hook form of the
+// same behavior. V2 has no config hook: every injection the V1 config hook
+// made moves to the domain that owns it, best-effort, keeping the same
+// contract — a broken personal root degrades to "no doppler", never to
+// "opencode will not boot". Enforcement is unchanged: enforce() re-reads the
+// hook directory per call, and the ask-prompt path (a hook's declared asks,
+// which V1 compiled into config.permission) moves to the permission evaluate
+// hook, where the host raises the prompt itself.
 
 // Glob matcher for allowlist patterns: `*` and `?`, anchored. Patterns pass
 // through verbatim from policy/allowlist.json, same as the config path.
@@ -1143,7 +1147,7 @@ function discoverSkills(roots: string[]): Array<Record<string, unknown>> {
   return out;
 }
 
-export async function setupV2(ctx: V2Ctx): Promise<() => void> {
+export async function setup(ctx: V2Ctx): Promise<() => void> {
   try {
     const roots = [paths().skills, ...overlaySkillRoots()].filter(hasEntries);
     const skills = discoverSkills(roots);
@@ -1221,7 +1225,10 @@ export async function setupV2(ctx: V2Ctx): Promise<() => void> {
   return () => controller.abort();
 }
 
-export default { id: "doppler", server: DopplerHarness, setup: setupV2 };
+// setup() first: it is the entry. server() is the legacy V1 path, kept until
+// the v1 support window closes — V1 hosts never call setup, V2 never calls
+// server.
+export default { id: "doppler", setup, server: DopplerHarness };
 
 // The refresh internals, for the test suite. What counts as a change worth
 // reloading for is a claim the bridge makes on the user's behalf — an edit that

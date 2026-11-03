@@ -181,6 +181,12 @@ package root
   policy/*.example.*              formats and worked examples, seeded on first run
 ```
 
+**Entry points.** The bridge's default export leads with `setup()` — that is
+the entry, and it is what opencode v2 reads. `server()` is the legacy form for
+opencode 1.x, kept until that support window closes: a v1 host never calls
+`setup`, a v2 host never calls `server`, and both return the same behavior in
+the shape their host expects.
+
 The package ships no content. `install` creates the directories, seeds the
 policy *formats*, and registers the bridge; everything else is yours to write.
 That is one rule with a reason: a policy you did not choose is not a policy, and
