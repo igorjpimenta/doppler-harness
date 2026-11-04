@@ -10,7 +10,8 @@
 // copy instead of itself.
 //
 // The copy is a whole unit, not a file: the bridge and the loader version
-// together, so a mixed pair can never run. A query string would be the obvious
+// together, so a mixed pair can never run — and it carries the core package
+// it imports by name, so a staged copy runs without the install around it. A query string would be the obvious
 // key and does not work — Bun, which is what OpenCode's plugin runtime is,
 // normalizes it away and serves the stale module. A filesystem path is the one
 // cache key every runtime honors.
@@ -36,7 +37,20 @@ export function engineCacheDir(home: string): string {
 export function engineUnitHash(dir: string): string | null {
   let names: string[];
   try {
-    names = fs.readdirSync(dir).filter((n) => !n.startsWith(".") && n !== "source.json").sort();
+    names = fs
+      .readdirSync(dir)
+      .filter((n) => !n.startsWith(".") && n !== "source.json")
+      // Files only: a source directory (dev mode) also holds subdirectories, and
+      // reading one would throw — which reads as "no unit" and silently stops
+      // every update check.
+      .filter((n) => {
+        try {
+          return fs.statSync(path.join(dir, n)).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .sort();
   } catch {
     return null;
   }
@@ -137,6 +151,18 @@ export function stageEngineUpdate(
       const src = path.join(dist, n);
       if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(dest, n));
     }
+    // The bridge's files import the core by package name, so the copy carries
+    // the dependency beside them — the same node_modules the unit resolves
+    // against on disk (its own, or its parent package's). Without it the
+    // staged copy imports, throws, and the update silently never applies.
+    const deps = [path.join(dist, "node_modules"), path.join(path.dirname(dist), "node_modules")].find((p) => {
+      try {
+        return fs.statSync(p).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+    if (deps) fs.cpSync(deps, path.join(dest, "node_modules"), { recursive: true });
     fs.writeFileSync(path.join(dest, "source.json"), JSON.stringify({ dist, hash: theirs }) + "\n");
     // The read-back is the barrier: the copy is imported milliseconds after it
     // is written, and a runtime that resolves the URL through a stale stat

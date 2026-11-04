@@ -29,6 +29,8 @@ permissions:
 
 jobs:
   publish:
+    # The adapter publishes under its own tag prefix; this job is the core.
+    if: ${{ !startsWith(inputs.tag || github.event.release.tag_name, 'doppler-opencode-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,3 +89,63 @@ jobs:
           echo "published $PKG@$VERSION under $DIST_TAG"
           npm view "$PKG" dist-tags --json
           npm view "$PKG" versions --json
+
+  # The host half of the engine, its own package and its own tag line:
+  # doppler-opencode-<semver>. Release order matters — its dependency on the
+  # core is a real npm range, so the core publishes first and this job's
+  # `npm install` resolves it.
+  publish-opencode:
+    if: startsWith(inputs.tag || github.event.release.tag_name, 'doppler-opencode-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/opencode/doppler
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Name this job what it is publishing
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#doppler-opencode-}"
+          if ! printf '%s' "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::${GITHUB_REF_NAME} is not doppler-opencode-<semver>"
+            exit 1
+          fi
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $TAG does not match package.json $VERSION — the tag is the contract; bump them together"
+            exit 1
+          fi
+          case "$VERSION" in
+            *-*) DIST_TAG="beta" ;;
+            *)   DIST_TAG="latest" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse a version the registry has already seen
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.meta.outputs.version }}"
+          if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
+            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
+            exit 1
+          fi
+          echo "$PKG@$VERSION is unused on the registry"
+
+      # The build needs no dependencies — the source imports the core by
+      # monorepo-relative path and the rewrite step happens after tsc. The
+      # install below exists for npm's own packaging scripts and for the
+      # dependency the published package declares.
+      - run: npm install
+      - run: npm run build
+      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"

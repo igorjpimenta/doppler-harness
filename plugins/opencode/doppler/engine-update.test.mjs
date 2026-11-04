@@ -1,4 +1,4 @@
-// Tests for the engine self-update (src/opencode/doppler.ts, src/opencode/loader.ts).
+// Tests for the engine self-update (this directory: doppler.ts, loader.ts, engine-update.ts).
 //
 // The mechanism: a running harness never re-reads its plugin — a module is
 // imported once and cached for the life of the process. So each entry checks
@@ -16,18 +16,18 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 test("both entries use the one shared implementation", () => {
   // The mechanism lives in one file, and the two entries import it rather than
   // carrying a copy each: a copy that missed a fix would be a different
   // mechanism on the bridge than on the loader, and the difference would only
   // show up as one of them not healing.
-  const shared = fs.readFileSync(path.join(ROOT, "src", "engine-update.ts"), "utf8");
+  const shared = fs.readFileSync(path.join(HERE, "engine-update.ts"), "utf8");
   assert.ok(shared.includes("export function stageEngineUpdate"), "the shared module has the mechanism");
   for (const file of ["doppler.ts", "loader.ts"]) {
-    const s = fs.readFileSync(path.join(ROOT, "src", "opencode", file), "utf8");
-    assert.match(s, /from "\..\/engine-update\.ts"/, `${file} imports the shared module`);
+    const s = fs.readFileSync(path.join(HERE, file), "utf8");
+    assert.match(s, /from "\.\/engine-update\.ts"/, `${file} imports the shared module`);
     assert.equal(s.split("export function stageEngineUpdate").length - 1, 0, `${file} carries no copy of it`);
   }
 });
@@ -35,7 +35,7 @@ test("both entries use the one shared implementation", () => {
 test("the build ships the shared module and the entries import it by its .js name", () => {
   // What ships is what runs: the emitted JavaScript has to name the emitted
   // file, or the package loads on the machine and not on the user's.
-  const dist = path.join(ROOT, "dist");
+  const dist = path.join(HERE, "dist");
   if (!fs.existsSync(path.join(dist, "doppler.js"))) return; // not built yet
   assert.ok(fs.existsSync(path.join(dist, "engine-update.js")), "the shared module ships");
   for (const file of ["doppler.js", "loader.js"]) {
@@ -58,10 +58,10 @@ function homeFixture() {
 }
 
 test("a copy is made when the package on disk is newer, and not when it is the same", async () => {
-  const mod = await import("../../src/opencode/doppler.ts");
+  const mod = await import("./doppler.ts");
   const home = homeFixture();
   const dist = distFixture();
-  const selfUrl = new URL("../../src/opencode/doppler.ts", import.meta.url).href;
+  const selfUrl = new URL("./doppler.ts", import.meta.url).href;
 
   const loaded = mod.internals.engineLoadedHash(selfUrl);
   assert.ok(loaded, "the running source hashes");
@@ -90,17 +90,17 @@ test("a copy is made when the package on disk is newer, and not when it is the s
 });
 
 test("a staged copy of the same build is never made", async () => {
-  const mod = await import("../../src/opencode/doppler.ts");
+  const mod = await import("./doppler.ts");
   const home = homeFixture();
-  const selfUrl = new URL("../../src/opencode/doppler.ts", import.meta.url).href;
+  const selfUrl = new URL("./doppler.ts", import.meta.url).href;
   const loaded = mod.internals.engineLoadedHash(selfUrl);
   assert.equal(mod.internals.stageEngineUpdate(home, selfUrl, "doppler.js", loaded), null, "nothing to stage");
 });
 
 test("an unreadable package on disk reads as no update", async () => {
-  const mod = await import("../../src/opencode/doppler.ts");
+  const mod = await import("./doppler.ts");
   const home = homeFixture();
-  const selfUrl = new URL("../../src/opencode/doppler.ts", import.meta.url).href;
+  const selfUrl = new URL("./doppler.ts", import.meta.url).href;
   const loaded = mod.internals.engineLoadedHash(selfUrl);
   process.env.DOPPLER_ENGINE_DIR = path.join(home, "does-not-exist");
   try {
@@ -114,7 +114,7 @@ test("a broken build on disk does not take down the session", async () => {
   // The update is executed, not trusted: a build that cannot even be imported
   // must leave the running one serving, because the whole point of the
   // mechanism is that a session survives an engine update.
-  const loader = await import("../../src/opencode/loader.ts");
+  const loader = await import("./loader.ts");
   const home = homeFixture();
   fs.mkdirSync(path.join(home, "plugins"), { recursive: true });
   fs.writeFileSync(
@@ -124,8 +124,8 @@ test("a broken build on disk does not take down the session", async () => {
   // The package on disk is the real build with its shared module broken: the
   // entries import it, so the copy cannot load.
   const dist = distFixture({
-    loader: fs.readFileSync(path.join(ROOT, "dist", "loader.js"), "utf8"),
-    doppler: fs.readFileSync(path.join(ROOT, "dist", "doppler.js"), "utf8"),
+    loader: fs.readFileSync(path.join(HERE, "dist", "loader.js"), "utf8"),
+    doppler: fs.readFileSync(path.join(HERE, "dist", "doppler.js"), "utf8"),
   });
   fs.writeFileSync(path.join(dist, "engine-update.js"), "this is not javascript (((\n");
 

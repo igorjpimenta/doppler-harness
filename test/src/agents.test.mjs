@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DopplerHarness } from "../../src/opencode/doppler.ts";
+import { DopplerHarness } from "../../plugins/opencode/doppler/doppler.ts";
 
 async function inject(home, files) {
   const previous = process.env.DOPPLER_HOME;

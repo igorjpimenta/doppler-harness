@@ -29,11 +29,11 @@ import {
   engineUnitHash,
   engineUpdateAvailable,
   stageEngineUpdate,
-} from "../engine-update.ts";
-import { NODE, nodeUsable, paths, globalAgentsMd, hasEntries, overlaySkillRoots } from "../paths.ts";
-import { report } from "../report.ts";
-import { enforce, hookFiles, runHook, compiledPermission, mergePermission } from "../policy.ts";
-import { readAgents } from "../agents.ts";
+} from "./engine-update.ts";
+import { NODE, nodeUsable, paths, globalAgentsMd, hasEntries, overlaySkillRoots } from "../../../src/paths.ts";
+import { report } from "../../../src/report.ts";
+import { enforce, hookFiles, runHook, compiledPermission, mergePermission } from "../../../src/policy.ts";
+import { readAgents } from "../../../src/agents.ts";
 import { startRefresh, recordEngineLoad, rootSnapshot } from "./refresh.ts";
 import type { Refresh } from "./refresh.ts";
 import { setup } from "./setup.ts";

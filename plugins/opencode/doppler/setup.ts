@@ -6,10 +6,10 @@
 // "opencode will not boot".
 import fs from "node:fs";
 import path from "node:path";
-import { paths, globalAgentsMd, hasEntries, overlaySkillRoots } from "../paths.ts";
-import { enforce, hookFiles, runHook, compiledPermission } from "../policy.ts";
-import { readAgents } from "../agents.ts";
-import { discoverSkills } from "../skills.ts";
+import { paths, globalAgentsMd, hasEntries, overlaySkillRoots } from "../../../src/paths.ts";
+import { enforce, hookFiles, runHook, compiledPermission } from "../../../src/policy.ts";
+import { readAgents } from "../../../src/agents.ts";
+import { discoverSkills } from "../../../src/skills.ts";
 
 
 // Structural shape of the plugin context setup() receives, limited to what it calls.

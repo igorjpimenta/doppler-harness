@@ -14,8 +14,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const DIST = path.join(ROOT, "dist");
+const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist");
 
 function bunPath() {
   const found = spawnSync("which", ["bun"], { encoding: "utf8" });
@@ -66,6 +65,12 @@ async function adoptionUnder(runtime, entry, exportName) {
   fs.cpSync(DIST, installed, { recursive: true });
   fs.writeFileSync(path.join(installed, "loader.js"), entryWithMarker("loader.js", "v1"));
   fs.writeFileSync(path.join(installed, "doppler.js"), entryWithMarker("doppler.js", "v1"));
+  // The built bridge resolves the core by package name; give the fixture the
+  // same link the repo's postinstall makes, or the import dies in /var/folders.
+  const repoRoot = path.resolve(DIST, "..", "..", "..", "..");
+  const scope = path.join(installed, "node_modules", "@igorjpimenta");
+  fs.mkdirSync(scope, { recursive: true });
+  fs.symlinkSync(repoRoot, path.join(scope, "doppler-harness"), "dir");
 
   const script = path.join(home, "child.mjs");
   fs.writeFileSync(script, CHILD);

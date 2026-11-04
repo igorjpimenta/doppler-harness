@@ -30,6 +30,33 @@ A `-beta.N` that turns out sound becomes the plain `YYYY.M.D` it was rehearsing
 — same date, no suffix, stable — and the tag that carried the beta keeps its
 place in history for anyone who pinned it.
 
+## Two packages
+
+One repo, two npm packages, one engine:
+
+- **`@igorjpimenta/doppler-harness`** (repo root) — the core: `src/`, the CLI,
+  the installer, the policy examples. Tag: `YYYY.M.D[-beta.N]`, as below.
+- **`@igorjpimenta/doppler-opencode`** (`plugins/opencode/doppler/`) — the host
+  bridge: the entry, the loader, the engine self-update. Tag:
+  `doppler-opencode-YYYY.M.D[-beta.N]`; `publish.yml` branches on that prefix.
+
+The adapter declares a semver range on the core, so **release the core
+first**: the adapter job runs `npm install` against that range and cannot
+resolve a version that is not on the registry yet. A core change that affects
+the bridge moves both versions — they share the date, and the adapter's range
+pins the pairing. The adapter's build needs no install (its source imports the
+core by monorepo-relative path and the rewrite step runs after `tsc`); the
+install exists for npm's packaging scripts and for the declared dependency.
+
+One-time, per package: npmjs.com → package → Access → Trusted Publisher →
+repository `igorjpimenta/doppler-harness`, workflow `publish.yml` — the same
+OIDC setup as the core, registered for `@igorjpimenta/doppler-opencode` as
+well. There is no token to store.
+
+To cut an adapter release without a GitHub Release of its own:
+`gh workflow run publish -f tag=doppler-opencode-<version>` (the existing
+`workflow_dispatch` trigger carries the tag).
+
 ## Tag names and npm versions are not the same names
 
 A tag is the contract for `github:…#<tag>` and for a release's asset URLs, so a

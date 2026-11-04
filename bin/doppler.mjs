@@ -32,6 +32,7 @@ import crypto from "node:crypto";
 import { execSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
 import { insertElement, removeWhere, stringElements, topLevelValueSpan } from "./jsonc.mjs";
 import { isNewerRelease, newestInstallable, newerTag, parseTag, tagsFromLsRemote } from "./update-core.mjs";
@@ -72,7 +73,21 @@ try {
 // TUI's Bun strips types anywhere, but the desktop app's server is Node, and
 // Node refuses to strip types for a file under node_modules — which is where a
 // package install lives.
-const BRIDGE = path.join(PKG, "dist", "doppler.js");
+// The host half of the engine ships as its own package: the entry, the loader
+// and their siblings version together there, and the core they import resolves
+// by name. This CLI finds it through normal package resolution — a real
+// install has it as a dependency; a checkout has it linked by
+// scripts/link-self.mjs.
+const requireFromCli = createRequire(import.meta.url);
+const ADAPTER_PKG = (() => {
+  try {
+    return path.dirname(requireFromCli.resolve("@igorjpimenta/doppler-opencode/package.json"));
+  } catch {
+    return null;
+  }
+})();
+const NO_ADAPTER = "@igorjpimenta/doppler-opencode is not installed (npm install @igorjpimenta/doppler-opencode)";
+const BRIDGE = ADAPTER_PKG ? path.join(ADAPTER_PKG, "dist", "doppler.js") : null;
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 // The plugin loader, same rule as the bridge: built JavaScript in this package,
@@ -82,12 +97,12 @@ const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 // builds its plugin list from the config file and the plugin directories before
 // any plugin runs, so no plugin (the bridge included) can add to that list, and
 // the root cannot occupy any of those locations without a copy.
-const LOADER = path.join(PKG, "dist", "loader.js");
+const LOADER = ADAPTER_PKG ? path.join(ADAPTER_PKG, "dist", "loader.js") : null;
 // What the loader wrote about the last session's load, so `doppler plugin
 // status` can answer the question the config cannot: did anything actually run?
 const PLUGIN_REPORT = path.join(HOME, "plugins.loaded.json");
 
-// Same hash the bridge writes of itself at load (src/opencode/doppler.ts), so the two
+// Same hash the bridge writes of itself at load (plugins/opencode/doppler/doppler.ts), so the two
 // sides compare like for like. Truncated to 16 hex chars: the value only has to
 // differ when the code differs, and a collision there is not a realistic failure.
 const ENGINE_LOADED = path.join(HOME, "engine.loaded.json");
@@ -113,7 +128,7 @@ function engineLoadedStamp() {
   }
 }
 
-// The bridge's declared id (src/opencode/doppler.ts exports it as a PluginModule).
+// The bridge's declared id (plugins/opencode/doppler/doppler.ts exports it as a PluginModule).
 // OpenCode loads every registered plugin and does not dedup by id, so "doppler
 // is the secondary option" is this installer's check, not the harness's: before
 // registering, load each existing plugin and read its id. A same-id plugin
@@ -241,7 +256,7 @@ function readConfig(p) {
 // point is that nothing is copied into ~/.config/opencode. Percent-encode via
 // pathToFileURL: a personal root containing a space is a valid path and an
 // unencoded URL simply fails to load.
-const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
+const entry = () => (BRIDGE ? JSON.stringify(pathToFileURL(BRIDGE).href) : JSON.stringify(""));
 
 // Every spelling the engine has ever been registered under is ours to clear:
 // an entry left behind under an older spelling would keep pointing at a file a
@@ -249,6 +264,10 @@ const entry = () => JSON.stringify(pathToFileURL(BRIDGE).href);
 const isDoppler = (literal) => /\/(dist|opencode)\/doppler\.(mjs|ts|js)"?$/.test(literal);
 
 function register() {
+  if (!BRIDGE) {
+    console.log(NO_ADAPTER);
+    return { path: ocConfigPath(), changed: false, missing: true };
+  }
   const p = ocConfigPath();
   const before = readConfig(p);
   // Clear any previous entry first: the personal root can move, and a stale
@@ -280,10 +299,14 @@ function unregister() {
 // ever appends" rule as the bridge: every spelling of the loader entry is ours
 // to clear before writing, so a root that moves cannot leave a stale URL behind.
 
-const loaderEntry = () => JSON.stringify(pathToFileURL(LOADER).href);
+const loaderEntry = () => (LOADER ? JSON.stringify(pathToFileURL(LOADER).href) : JSON.stringify(""));
 const isLoader = (literal) => /\/dist\/loader\.js"?$/.test(literal);
 
 function registerLoader() {
+  if (!LOADER) {
+    console.log(NO_ADAPTER);
+    return { path: ocConfigPath(), changed: false, missing: true };
+  }
   const p = ocConfigPath();
   const before = readConfig(p);
   const cleared = removeWhere(before, topLevelValueSpan(before, "plugin"), isLoader);
@@ -464,7 +487,9 @@ function reload() {
   fs.writeFileSync(RELOAD_SENTINEL, `${previous + 1}\n`);
   console.log(`reload requested: ${RELOAD_SENTINEL}`);
   console.log("a running opencode applies it at its next idle moment — a turn in flight is never interrupted.");
-  if (!fs.existsSync(BRIDGE)) {
+  if (!BRIDGE) {
+    console.log(`note: ${NO_ADAPTER}, so nothing is registered to answer.`);
+  } else if (!fs.existsSync(BRIDGE)) {
     console.log(`note: no bridge at ${BRIDGE}, so nothing is registered to answer. Run doppler install opencode.`);
   }
 }
@@ -698,7 +723,8 @@ function doctor() {
 
   // The bridge is read in place from the package. A missing one means the
   // install is broken, not half-finished, and nothing will load.
-if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
+if (!BRIDGE) bad("bridge file", NO_ADAPTER, "npm install @igorjpimenta/doppler-opencode");
+else if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
     else bad("bridge file", `missing at ${BRIDGE}`, "doppler install opencode");
 
     // The build on disk is not the engine a running session is executing: a plugin

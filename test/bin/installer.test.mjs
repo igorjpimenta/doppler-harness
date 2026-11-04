@@ -17,6 +17,8 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+// The bridge lives in its own package now; everything registered points there.
+const ADAPTER_BRIDGE = path.join(ROOT, "plugins", "opencode", "doppler", "dist", "doppler.js");
 const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
 
 // The product's own reader, so the assertions cannot be fooled by a config
@@ -114,7 +116,7 @@ test("the bridge is registered from the package, and no copy is left in the root
     const [entry] = configOf(m).plugin;
     assert.ok(entry.startsWith("file://"), entry);
     const file = decodeURIComponent(new URL(entry).pathname);
-    assert.equal(file, path.join(ROOT, "dist", "doppler.js"));
+    assert.equal(file, ADAPTER_BRIDGE);
     assert.ok(fs.existsSync(file), "the registered path must exist");
     // The whole point: nothing engine-shaped survives in the user's directory.
     assert.equal(fs.existsSync(path.join(home, "opencode", "doppler.ts")), false);
@@ -413,7 +415,7 @@ test("install repairs a stale registration", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["install", "opencode"]).status, 0);
     assert.equal(configOf(m).plugin.length, 1);
-    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), ADAPTER_BRIDGE);
     assert.equal(run(m, ["doctor"]).status, 0);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
@@ -551,7 +553,7 @@ test("update re-registers the package's own bridge, so a move is self-healing", 
     c.plugin = ["file:///moved/package/opencode/doppler.ts"];
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     assert.equal(run(m, ["update"]).status, 0);
-    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), path.join(ROOT, "dist", "doppler.js"));
+    assert.equal(decodeURIComponent(new URL(configOf(m).plugin[0]).pathname), ADAPTER_BRIDGE);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -747,8 +749,8 @@ test("plugin register names a missing loader rather than writing a dead entry", 
   // missing file is exactly the stale entry doctor then has to catch.
   const src = fs.readFileSync(DOPPLER, "utf8");
   const patched = src.replace(
-    /const LOADER = path\.join\(PKG, "dist", "loader\.js"\);/,
-    'const LOADER = path.join(PKG, "dist", "loader-absent.js");',
+    /const LOADER = ADAPTER_PKG \? path\.join\(ADAPTER_PKG, "dist", "loader\.js"\) : null;/,
+    'const LOADER = ADAPTER_PKG ? path.join(ADAPTER_PKG, "dist", "loader-absent.js") : null;',
   );
   assert.notEqual(patched, src, "the fixture replaced the loader path");
   // Written beside the original: the CLI imports ./jsonc.mjs relatively, so a
@@ -789,7 +791,7 @@ test("doctor agrees when the loaded build is the one on disk", () => {
   const m = machine();
   try {
     run(m, ["install", "opencode"]);
-    const bridge = path.join(ROOT, "dist", "doppler.js");
+    const bridge = ADAPTER_BRIDGE;
     const stamp = spawnSync("shasum", ["-a", "256", bridge], { encoding: "utf8" }).stdout.trim().split(/\s+/)[0].slice(0, 16);
     fs.writeFileSync(
       path.join(m.home, ".doppler", "engine.loaded.json"),

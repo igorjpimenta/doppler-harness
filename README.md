@@ -15,8 +15,13 @@ Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
 npm install -g @igorjpimenta/doppler-harness
+npm install -g @igorjpimenta/doppler-opencode
 doppler install opencode
 ```
+
+The second package is the host bridge (the entry, the loader, the engine). The
+CLI resolves it like any dependency and names it if it is missing — so a
+half-install says what to run instead of registering nothing.
 
 No version in the command: npm's `latest` dist-tag is the newest release. To
 pin, add one — `npm install -g @igorjpimenta/doppler-harness@<version>` — or
@@ -27,6 +32,7 @@ and works where the registry does not:
 
 ```bash
 npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
+npm install -g @igorjpimenta/doppler-opencode
 doppler install opencode
 ```
 
@@ -36,6 +42,7 @@ install from the git ref:
 
 ```bash
 npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
+npm install -g @igorjpimenta/doppler-opencode
 doppler install opencode
 ```
 
@@ -175,20 +182,18 @@ Automatic live refresh can be turned off with `DOPPLER_RELOAD=off`, which leaves
   opencode.json                   generated: where the root is
   .reload                         generated: bumped by `doppler reload`
 
-package root
-  src/                            the bridge — the only code that knows OpenCode exists
-    paths.ts report.ts            the personal root, and one logger
-    policy.ts                     hook protocol, enforce(), allowlist → permission effects
-    agents.ts skills.ts           frontmatter parsing and discovery
-    engine-update.ts              self-update (shared by both entries)
-    opencode/
-      doppler.ts                  the entry: default export (setup + legacy server), internals
-      setup.ts                    the entry body: domain injections, enforcement wiring
-      refresh.ts                  legacy live-refresh watcher (v1 hosts only)
-      loader.ts                   composes ~/.doppler/plugins/*.mjs
-  bin/doppler.mjs                 the installer
-  scripts/                        build helpers (clean, flatten)
+package root — @igorjpimenta/doppler-harness (the core)
+  src/                            the engine: paths, report, policy, agents, skills
+  bin/doppler.mjs                 the CLI and installer
+  scripts/                        build helpers + the dev self-link
   policy/*.example.*              formats and worked examples, seeded on first run
+
+plugins/opencode/doppler — @igorjpimenta/doppler-opencode (the host bridge)
+  doppler.ts                      the entry: default export (setup + legacy server), internals
+  setup.ts                        the entry body: domain injections, enforcement wiring
+  refresh.ts                      legacy live-refresh watcher (v1 hosts only)
+  loader.ts                       composes ~/.doppler/plugins/*.mjs
+  engine-update.ts                self-update: one unit, dependency carried with the copy
 ```
 
 **Entry points.** The bridge's default export leads with `setup()` — that is

@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DopplerHarness, internals } from "../../src/opencode/doppler.ts";
+import { DopplerHarness, internals } from "./doppler.ts";
 
 // A personal root holding exactly the hooks and policy a test names. Only
 // `policy/` is pre-created, because that is the one directory the bridge reads
