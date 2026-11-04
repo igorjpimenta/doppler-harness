@@ -11,51 +11,7 @@ import path from "node:path";
 import test from "node:test";
 
 import dopplerDefault, { setup } from "./doppler.ts";
-
-function rootWith({ policy = {}, skills = {}, globalAgentsMd = null, agentsMd = null } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-setup-"));
-  fs.mkdirSync(path.join(home, "policy"), { recursive: true });
-  for (const d of ["hooks", "agents", "skills", "plugins"]) {
-    fs.mkdirSync(path.join(home, d), { recursive: true });
-  }
-  for (const [name, body] of Object.entries(skills)) {
-    const dir = path.join(home, "skills", name);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "SKILL.md"), body);
-  }
-  for (const [name, body] of Object.entries(policy)) {
-    fs.writeFileSync(path.join(home, "policy", name), body);
-  }
-  if (agentsMd !== null) fs.writeFileSync(path.join(home, "AGENTS.md"), agentsMd);
-  const fakeProcessHome = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-setup-user-"));
-  if (globalAgentsMd !== null) {
-    fs.mkdirSync(path.join(fakeProcessHome, ".config", "opencode"), { recursive: true });
-    fs.writeFileSync(path.join(fakeProcessHome, ".config", "opencode", "AGENTS.md"), globalAgentsMd);
-  }
-  return { home, fakeProcessHome };
-}
-
-async function withRoot(spec, fn) {
-  const { home, fakeProcessHome } = rootWith(spec);
-  const prev = {
-    DOPPLER_HOME: process.env.DOPPLER_HOME,
-    HOME: process.env.HOME,
-    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-  };
-  process.env.DOPPLER_HOME = home;
-  process.env.HOME = fakeProcessHome;
-  process.env.XDG_CONFIG_HOME = path.join(fakeProcessHome, ".config");
-  try {
-    return await fn(home);
-  } finally {
-    for (const [k, v] of Object.entries(prev)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(fakeProcessHome, { recursive: true, force: true });
-  }
-}
+import { rootWith, withRoot } from "./_harness.js";
 
 // The host context, recorded: every registration lands in `captured`, every
 // editor add in `added`. event.subscribe returns an iterator that ends on
