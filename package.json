@@ -21,7 +21,8 @@
     "AGENTS.md",
     "LICENSE",
     "install.sh",
-    "dist"
+    "dist",
+    "scripts/"
   ],
   "keywords": [
     "ai",
