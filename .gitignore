@@ -11,8 +11,5 @@ dist/
 # npm pack output: an artifact of cutting a release, not source.
 *.tgz
 
-# The package ships no dependencies, so a lockfile would pin nothing.
-package-lock.json
-
 # OS noise.
 **/.DS_Store
