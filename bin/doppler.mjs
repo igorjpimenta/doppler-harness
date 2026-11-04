@@ -88,6 +88,9 @@ const ADAPTER_PKG = (() => {
 })();
 const NO_ADAPTER = "@igorjpimenta/doppler-opencode is not installed (npm install @igorjpimenta/doppler-opencode)";
 const BRIDGE = ADAPTER_PKG ? path.join(ADAPTER_PKG, "dist", "doppler.js") : null;
+// V2 resolves a configured local plugin as a directory, reading the package
+// exports, where V1 takes the file URL above. The adapter package carries both.
+const V2_ENTRY = ADAPTER_PKG;
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 // The plugin loader, same rule as the bridge: built JavaScript in this package,
@@ -291,6 +294,54 @@ function unregister() {
   return { path: p, changed: true };
 }
 
+// The V2 registration is a separate key and a separate shape: `plugins` takes
+// directories and packages, and V2 skips a file URL with a warning. A plain
+// path avoids the URL percent-encoding question on a root with a space.
+const v2Entry = () => (V2_ENTRY ? JSON.stringify(V2_ENTRY) : JSON.stringify(""));
+const isV2Entry = (literal) => {
+  try {
+    const value = JSON.parse(literal);
+    // The old v2 shape named the pre-split bridge directory; clearing it keeps
+    // an upgrade from registering a path the split removed.
+    // The dev link resolves to the package directory, whose last segment is
+    // `doppler`, so the current entry is compared by value rather than suffix.
+    return (
+      typeof value === "string" &&
+      (value === V2_ENTRY ||
+        value.endsWith("/doppler-opencode") ||
+        value.endsWith("/doppler-harness/v2"))
+    );
+  } catch {
+    return false;
+  }
+};
+
+function registerV2() {
+  if (!V2_ENTRY) {
+    console.log(NO_ADAPTER);
+    return { path: ocConfigPath(), changed: false, missing: true };
+  }
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const cleared = removeWhere(before, topLevelValueSpan(before, "plugins"), isV2Entry);
+  const after = insertElement(cleared, topLevelValueSpan(cleared, "plugins"), "plugins", v2Entry());
+  if (after === before) return { path: p, changed: false };
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
+function unregisterV2() {
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const span = topLevelValueSpan(before, "plugins");
+  if (!span) return { path: p, changed: false };
+  const after = removeWhere(before, span, isV2Entry);
+  if (after === before) return { path: p, changed: false };
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
 // --- plugins ---------------------------------------------------------------
 //
 // The root's plugins load through one registered entry that discovers them at
@@ -466,6 +517,8 @@ async function installOpencode() {
   }
   const r = register();
   console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${entry()}`);
+  const v2 = registerV2();
+  console.log(`${v2.changed ? "registered" : "already registered"}: ${v2.path} → ${v2Entry()} (OpenCode 2)`);
   verify();
 }
 
@@ -513,6 +566,8 @@ function uninstallOpencode() {
   // "uninstall" — the one outcome that makes the command a lie.
   const l = unregisterLoader();
   console.log(`${l.changed ? "removed" : "not present"}: doppler plugin loader entry in ${l.path}`);
+  const v2 = unregisterV2();
+  console.log(`${v2.changed ? "removed" : "not present"}: doppler OpenCode 2 entry in ${v2.path}`);
   console.log(`left in place: ${path.join(HOME, "hooks")} and ${path.join(HOME, "policy")} — your files.`);
   console.log(`delete ${HOME} to remove the personal root entirely.`);
 }
@@ -807,6 +862,27 @@ bad(
     }
   } else {
     bad("registered in opencode config", `no doppler entry in ${cfg}`, "doppler install opencode");
+  }
+
+  // The v2 entry fails independently: a config can be correct for one runtime
+  // and missing the other's key entirely.
+  const v2Entries = stringElements(readConfig(cfg), topLevelValueSpan(readConfig(cfg), "plugins"));
+  const v2Literal = v2Entries.find((e) => isV2Entry(e));
+  let v2Registered = null;
+  if (v2Literal) {
+    try {
+      v2Registered = JSON.parse(v2Literal);
+    } catch {
+      v2Registered = null;
+    }
+  }
+  if (v2Registered) {
+    if (v2Registered === V2_ENTRY) ok("registered for OpenCode 2", v2Registered);
+    else bad("OpenCode 2 path is stale", `points at ${v2Registered}, not ${V2_ENTRY}`, "doppler install opencode");
+    if (fs.existsSync(path.join(v2Registered, "index.js"))) ok("OpenCode 2 entry resolves");
+    else bad("OpenCode 2 entry resolves", `no index.js in ${v2Registered}`, "doppler install opencode");
+  } else {
+    warn("registered for OpenCode 2", `no doppler entry in ${cfg} plugins — v2 will not load it`);
   }
 
 // Does OpenCode actually load it? An entry in a file it ignores is

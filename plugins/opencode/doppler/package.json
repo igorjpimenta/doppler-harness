@@ -22,9 +22,15 @@
     "@igorjpimenta/doppler-harness": "^2026.11.4-beta.1"
   },
   "files": [
+    "index.js",
     "dist"
   ],
   "devDependencies": {
     "typescript": "^5.9.0"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
   }
 }
