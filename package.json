@@ -49,6 +49,7 @@
     "tag": "latest"
   },
   "exports": {
-    "./*": "./dist/*.js"
+    "./*": "./dist/*.js",
+    "./*.js": "./dist/*.js"
   }
 }
