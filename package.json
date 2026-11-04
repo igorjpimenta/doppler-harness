@@ -1,7 +1,7 @@
 {
   "name": "@igorjpimenta/doppler-harness",
-  "version": "2026.11.4",
-  "description": "One config root for every coding agent — connect OpenCode with a single CLI command. No symlinks, no copies.",
+  "version": "2026.11.4-beta.1",
+  "description": "One config root for every coding agent \u2014 connect OpenCode with a single CLI command. No symlinks, no copies.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,7 @@
     "test:live": "node scripts/live-idle-gate.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p plugins/opencode/doppler",
     "build": "node scripts/clean-dist.mjs && tsc",
-    "prepare": "npm run build || (echo '[doppler] no tsc on PATH — fetching typescript, transpiling (type diagnostics expected)' && npx --yes -p typescript@5.9 tsc; node -e \"const{pathToFileURL}=require('url');import(pathToFileURL('dist/doppler.js'))\")",
+    "prepare": "npm run build || (echo '[doppler] no tsc on PATH \u2014 fetching typescript, transpiling (type diagnostics expected)' && npx --yes -p typescript@5.9 tsc; node -e \"const{pathToFileURL}=require('url');import(pathToFileURL('dist/doppler.js'))\")",
     "postinstall": "node scripts/link-self.mjs"
   },
   "devDependencies": {

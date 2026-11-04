@@ -40,9 +40,12 @@ One repo, two npm packages, one engine:
   bridge: the entry, the loader, the engine self-update. Tag:
   `doppler-opencode-YYYY.M.D[-beta.N]`; `publish.yml` branches on that prefix.
 
-The adapter declares a semver range on the core, so **release the core
-first**: the adapter job runs `npm install` against that range and cannot
-resolve a version that is not on the registry yet. A core change that affects
+Both packages carry the same date, and every release is cut as
+`YYYY.M.D-beta.N` — betas only until a version is promoted, never a bare
+date. The adapter declares a semver range on the core (including its
+prerelease), so **release the core first**: the adapter job runs
+`npm install` against that range and cannot resolve a version that is not
+on the registry yet. A core change that affects
 the bridge moves both versions — they share the date, and the adapter's range
 pins the pairing. The adapter's build needs no install (its source imports the
 core by monorepo-relative path and the rewrite step runs after `tsc`); the
