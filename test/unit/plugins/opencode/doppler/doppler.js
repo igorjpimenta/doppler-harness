@@ -11,70 +11,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DopplerHarness, internals } from "../opencode/doppler.ts";
-
-// A personal root holding exactly the hooks and policy a test names. Only
-// `policy/` is pre-created, because that is the one directory the bridge reads
-// without needing something in it; hooks/, agents/ and skills/ are created when
-// a test puts something there, so "the user has no skills" is expressible.
-// Everything the bridge reads resolves from DOPPLER_HOME, so no test can reach
-// the real root. The process home is always faked too — empty unless
-// `globalAgentsMd` gives content for a fake ~/.config/opencode/AGENTS.md —
-// because the bridge reads that path from os.homedir() (which honors $HOME on
-// POSIX), and on a machine that has real global instructions every
-// registration assertion would otherwise depend on the developer's own setup.
-function rootWith({ hooks = {}, policy = {}, skills = {}, plugins = {}, mkdir = [], globalAgentsMd = null } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-bridge-"));
-  fs.mkdirSync(path.join(home, "policy"), { recursive: true });
-  for (const d of ["hooks", "agents", "skills", "plugins", ...mkdir]) {
-    fs.mkdirSync(path.join(home, d), { recursive: true });
-  }
-  for (const [name, body] of Object.entries(plugins)) {
-    fs.writeFileSync(path.join(home, "plugins", name), body);
-  }
-  for (const [name, body] of Object.entries(skills)) {
-    const dir = path.join(home, "skills", name);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "SKILL.md"), body);
-  }
-  for (const [name, body] of Object.entries(hooks)) {
-    fs.writeFileSync(path.join(home, "hooks", name), body);
-  }
-  for (const [name, body] of Object.entries(policy)) {
-    fs.writeFileSync(path.join(home, "policy", name), body);
-  }
-  const fakeProcessHome = fs.mkdtempSync(path.join(os.tmpdir(), "doppler-userhome-"));
-  if (globalAgentsMd !== null) {
-    fs.mkdirSync(path.join(fakeProcessHome, ".config", "opencode"), { recursive: true });
-    fs.writeFileSync(path.join(fakeProcessHome, ".config", "opencode", "AGENTS.md"), globalAgentsMd);
-  }
-  return { home, fakeProcessHome };
-}
-
-async function withRoot(spec, fn) {
-  const { home, fakeProcessHome } = rootWith(spec);
-  const previousDoppler = process.env.DOPPLER_HOME;
-  const previousHome = process.env.HOME;
-  const previousXdg = process.env.XDG_CONFIG_HOME;
-  process.env.DOPPLER_HOME = home;
-  process.env.HOME = fakeProcessHome;
-  // The bridge resolves the global instructions path the way OpenCode does —
-  // XDG_CONFIG_HOME first — so it must point at the fake home's .config too,
-  // or a developer's real XDG setting would decide the assertions.
-  process.env.XDG_CONFIG_HOME = path.join(fakeProcessHome, ".config");
-  try {
-    return await fn(home, await DopplerHarness({}));
-  } finally {
-    if (previousDoppler === undefined) delete process.env.DOPPLER_HOME;
-    else process.env.DOPPLER_HOME = previousDoppler;
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-    else process.env.XDG_CONFIG_HOME = previousXdg;
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(fakeProcessHome, { recursive: true, force: true });
-  }
-}
+import { DopplerHarness, internals } from "../../../../../plugins/opencode/doppler/doppler.ts";
+import { rootWith, withRoot } from "../../../../helpers/harness.js";
 
 // A hook that decides one way, written the way a user's would be: read the
 // payload, print a decision, exit 0.
@@ -601,7 +539,11 @@ const BACKSTOP = FAST.backstopMs;
 // it has been observed past 8s. So those tests wait up to 20s and assert they
 // beat half the backstop, which is the claim, rather than a deadline that only
 // ever measured the machine.
-async function waitFor(what, predicate, timeout = 8000) {
+// The deadline is a safety net for an outcome that normally lands in seconds
+// (grace + quiet + a debounce), not a latency assertion: the predicates are
+// about *whether* the request came, so a loaded machine gets headroom instead
+// of a flake.
+async function waitFor(what, predicate, timeout = 20_000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
     if (predicate()) return Date.now() - t0;
@@ -699,7 +641,10 @@ test("a policy edit asks the harness to rebuild, and only once", async () => {
     );
     try {
       assert.equal(server.calls.length, 0, "nothing changed yet");
-      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"x"}]}');
+      // An editor's burst, not a single write: one fs.watch event can be
+      // coalesced away on macOS, and a test that needs exactly one event is
+      // testing FSEvents, not the watcher.
+      atomicSaves(path.join(home, "policy", "allowlist.json"), (i) => (i === 39 ? '{"ask":[{"pattern":"x"}]}' : "{}"));
       await waitFor("the reload request", () => server.calls.length > 0);
       assert.equal(server.calls[0].method, "POST");
       assert.match(server.calls[0].url, /\/instance\/dispose\?directory=/);
@@ -879,7 +824,7 @@ test("a change held by a window is released when the window closes", async () =>
       { backstopMs: 60_000, debounceMs: 5, quietMs: 5, graceMs: 300 },
     );
     try {
-      fs.writeFileSync(path.join(home, "policy", "allowlist.json"), '{"ask":[{"pattern":"held"}]}');
+      atomicSaves(path.join(home, "policy", "allowlist.json"), (i) => (i === 39 ? '{"ask":[{"pattern":"held"}]}' : "{}"));
       const took = await waitFor("the release when the grace closed", () => server.calls.length > 0);
       assert.equal(server.calls.length, 1, "released when the grace closed");
       // The claim is that its own wake-up released it, not the backstop parked

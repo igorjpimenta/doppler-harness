@@ -14,8 +14,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DIST = path.join(ROOT, "dist");
+const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../../../plugins/opencode/doppler", "dist");
 
 function bunPath() {
   const found = spawnSync("which", ["bun"], { encoding: "utf8" });
@@ -61,11 +60,17 @@ async function adoptionUnder(runtime, entry, exportName) {
   const ready = path.join(home, "ready");
   fs.writeFileSync(log, "");
 
+  // The package is the whole dist: the entries import their siblings, and a
+  // copy of a unit missing one of its files is not a unit.
+  fs.cpSync(DIST, installed, { recursive: true });
   fs.writeFileSync(path.join(installed, "loader.js"), entryWithMarker("loader.js", "v1"));
   fs.writeFileSync(path.join(installed, "doppler.js"), entryWithMarker("doppler.js", "v1"));
-  // The package is the whole dist: the entries import the shared module, and a
-  // copy of a unit missing one of its files is not a unit.
-  fs.copyFileSync(path.join(DIST, "engine-update.js"), path.join(installed, "engine-update.js"));
+  // The built bridge resolves the core by package name; give the fixture the
+  // same link the repo's postinstall makes, or the import dies in /var/folders.
+  const repoRoot = path.resolve(DIST, "..", "..", "..", "..");
+  const scope = path.join(installed, "node_modules", "@igorjpimenta");
+  fs.mkdirSync(scope, { recursive: true });
+  fs.symlinkSync(repoRoot, path.join(scope, "doppler-harness"), "dir");
 
   const script = path.join(home, "child.mjs");
   fs.writeFileSync(script, CHILD);

@@ -1,0 +1,30 @@
+{
+  "name": "@igorjpimenta/doppler-opencode",
+  "version": "2026.11.4-beta.1",
+  "description": "OpenCode bridge for doppler-harness: the entry (setup + legacy server), the plugin loader, and the engine self-update.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igorjpimenta/doppler-harness.git",
+    "directory": "plugins/opencode/doppler"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsc && node scripts/rewrite-deps.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=1 \"plugins/opencode/doppler/*.test.mjs\""
+  },
+  "dependencies": {
+    "@igorjpimenta/doppler-harness": "^2026.11.4-beta.1"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
