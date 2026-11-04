@@ -10,6 +10,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { DopplerHarness, internals } from "../../../../../plugins/opencode/doppler/doppler.ts";
 import { rootWith, withRoot } from "../../../../helpers/harness.js";
@@ -877,4 +878,23 @@ test("the plugin stops polling when the instance is disposed", async () => {
     await plugin.dispose();
     await plugin.dispose();
   });
+});
+
+test("the built bridge resolves its core by name under Node", async () => {
+  // tsc emits `@igorjpimenta/doppler-harness/paths.js`; the core's exports map
+  // has to answer that spelling as well as the extensionless one, or the
+  // Desktop server (Node) cannot load the built bridge at all.
+  const dist = path.join(import.meta.dirname, "..", "..", "..", "..", "..", "plugins", "opencode", "doppler", "dist", "doppler.js");
+  if (!fs.existsSync(dist)) return; // not built yet
+  const mod = await import(pathToFileURL(dist).href);
+  assert.equal(mod.default.id, "doppler");
+  assert.equal(typeof mod.default.setup, "function");
+  assert.equal(typeof mod.default.server, "function");
+});
+
+test("the package root entry is the v2 directory entry", async () => {
+  const entry = path.join(import.meta.dirname, "..", "..", "..", "..", "..", "plugins", "opencode", "doppler", "index.js");
+  assert.ok(fs.existsSync(entry), "index.js ships at the package root");
+  const mod = await import(pathToFileURL(entry).href);
+  assert.equal(mod.default.id, "doppler");
 });
