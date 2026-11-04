@@ -11,8 +11,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { DopplerHarness, internals } from "./doppler.ts";
-import { rootWith, withRoot } from "./_harness.js";
+import { DopplerHarness, internals } from "../../../../../plugins/opencode/doppler/doppler.ts";
+import { rootWith, withRoot } from "../../../../helpers/harness.js";
 
 // A hook that decides one way, written the way a user's would be: read the
 // payload, print a decision, exit 0.

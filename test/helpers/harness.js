@@ -17,7 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { DopplerHarness } from "./doppler.ts";
+import { DopplerHarness } from "../../plugins/opencode/doppler/doppler.ts";
 
 export function rootWith({
   hooks = {},

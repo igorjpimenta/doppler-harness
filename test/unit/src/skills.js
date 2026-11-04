@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { discoverSkills } from "../../src/skills.ts";
-import { rootWith, withRoot } from "../../plugins/opencode/doppler/_harness.js";
+import { discoverSkills } from "../../../src/skills.ts";
+import { rootWith, withRoot } from "../../helpers/harness.js";
 
 const SKILL = "---\nname: review\ndescription: Review the diff\n---\nSkill body.\n";
 

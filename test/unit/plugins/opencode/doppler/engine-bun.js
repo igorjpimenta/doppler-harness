@@ -14,7 +14,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist");
+const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../../../plugins/opencode/doppler", "dist");
 
 function bunPath() {
   const found = spawnSync("which", ["bun"], { encoding: "utf8" });

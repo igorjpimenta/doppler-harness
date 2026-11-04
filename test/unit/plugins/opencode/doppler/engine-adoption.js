@@ -15,7 +15,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist");
+const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../../../plugins/opencode/doppler", "dist");
 
 function tempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

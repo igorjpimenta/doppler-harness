@@ -12,7 +12,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const LOADER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "dist", "loader.js");
+const LOADER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../plugins/opencode/doppler", "dist", "loader.js");
 
 // A personal root holding exactly the plugins a test names. DOPPLER_HOME is the
 // resolver's first choice, so no test can reach the real root.

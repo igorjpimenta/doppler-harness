@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { report } from "../../src/report.ts";
+import { report } from "../../../src/report.ts";
 
 test("report writes to stderr and never throws without a client", () => {
   const lines = [];

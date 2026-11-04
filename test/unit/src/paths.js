@@ -5,8 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { personalRoot, paths, globalAgentsMd, hasEntries, overlaySkillRoots, nodeUsable, NODE } from "../../src/paths.ts";
-import { rootWith, withRoot } from "../../plugins/opencode/doppler/_harness.js";
+import { personalRoot, paths, globalAgentsMd, hasEntries, overlaySkillRoots, nodeUsable, NODE } from "../../../src/paths.ts";
+import { rootWith, withRoot } from "../../helpers/harness.js";
 
 test("DOPPLER_HOME names the root outright", async () => {
   await withRoot({}, async (home) => {
@@ -91,7 +91,7 @@ test("NODE is resolved once at import, and DOPPLER_NODE is what it reads", async
   const saved = process.env.DOPPLER_NODE;
   process.env.DOPPLER_NODE = path.join("/nonexistent", "node");
   try {
-    const fresh = await import("../../src/paths.ts?doppler-node-probe=1");
+    const fresh = await import("../../../src/paths.ts?doppler-node-probe=1");
     assert.match(fresh.NODE, /nonexistent/, "a fresh import reads the override");
     assert.equal(fresh.nodeUsable(), false, "and an unusable node is not usable");
   } finally {

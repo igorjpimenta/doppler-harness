@@ -10,8 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import dopplerDefault, { setup } from "./doppler.ts";
-import { rootWith, withRoot } from "./_harness.js";
+import dopplerDefault, { setup } from "../../../../../plugins/opencode/doppler/doppler.ts";
+import { rootWith, withRoot } from "../../../../helpers/harness.js";
 
 // The host context, recorded: every registration lands in `captured`, every
 // editor add in `added`. event.subscribe returns an iterator that ends on

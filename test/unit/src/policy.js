@@ -5,8 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { compiledPermission, declaredAskPatterns, enforce, mergePermission } from "../../src/policy.ts";
-import { rootWith, withRoot } from "../../plugins/opencode/doppler/_harness.js";
+import { compiledPermission, declaredAskPatterns, enforce, mergePermission } from "../../../src/policy.ts";
+import { rootWith, withRoot } from "../../helpers/harness.js";
 
 const denyHook = `#!/usr/bin/env node
 import fs from "node:fs";

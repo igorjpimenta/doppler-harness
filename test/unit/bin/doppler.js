@@ -16,7 +16,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 // The bridge lives in its own package now; everything registered points there.
 const ADAPTER_BRIDGE = path.join(ROOT, "plugins", "opencode", "doppler", "dist", "doppler.js");
 const DOPPLER = path.join(ROOT, "bin", "doppler.mjs");
