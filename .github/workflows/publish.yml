@@ -42,6 +42,22 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      # Trusted Publishing is OIDC: npm >= 11.5.1 exchanges the job's id-token
+      # for a registry token. setup-node's registry-url also writes an
+      # _authToken=${NODE_AUTH_TOKEN} line into the npmrc it points at; with no
+      # NODE_AUTH_TOKEN in the environment that expands to empty, npm reads it
+      # as "auth is configured", skips the OIDC exchange, and publish dies with
+      # a 404 from the registry. Node 22 ships npm 10 — upgrade, then strip the
+      # line so the exchange can run.
+      - name: Give npm the OIDC-capable CLI and a clean auth config
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          sed -i '/_authToken/d' "$npmrc"
+          cat "$npmrc"
+
       - name: Name this job what it is publishing
         id: meta
         run: |
@@ -109,6 +125,17 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Same OIDC prerequisites as the core job: npm >= 11.5.1 for the
+      # id-token exchange, and no _authToken line left to pre-empt it.
+      - name: Give npm the OIDC-capable CLI and a clean auth config
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          sed -i '/_authToken/d' "$npmrc"
+          cat "$npmrc"
 
       - name: Name this job what it is publishing
         id: meta
