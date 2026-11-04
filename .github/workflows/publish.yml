@@ -94,6 +94,20 @@ jobs:
           echo "$PKG@$VERSION is unused on the registry"
 
       - run: npm ci
+
+      # ENEEDAUTH has two distinct causes — the job never received the OIDC
+      # request vars, or npm's exchange failed (trusted publisher absent or
+      # misnamed on npmjs.com). The publish error alone does not say which.
+      - name: Diagnose OIDC availability
+        run: |
+          set -euo pipefail
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "id-token: job HAS the OIDC request vars -> failure is npm-side (trusted publisher config)"
+          else
+            echo "::error::id-token: job has NO OIDC request vars -> GitHub did not grant id-token:write"
+            exit 1
+          fi
+
       - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
 
       - name: Record what is now the default install
