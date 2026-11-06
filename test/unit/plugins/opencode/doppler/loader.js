@@ -165,6 +165,38 @@ test("an edited plugin is re-imported on the next load, without a restart", asyn
   r.cleanup();
 });
 
+test("after an edit, an unchanged reload keeps running the edit, not the first load", async () => {
+  // Bun caches file: URLs for the process, so the canonical URL holds the
+  // FIRST import's content forever. The bug this pins: load, edit, load (the
+  // edit runs through a copy), load again — the third load used to pick the
+  // canonical URL because the stamp matched the report, silently serving the
+  // first-load module. The marker lives in the hook body because a cache hit
+  // does not re-run module top level: only the stale module's own hook can
+  // append the first-load tag a second time.
+  const r = rootWith();
+  const seen = path.join(r.home, "seen.log");
+  const file = path.join(r.dir, "versioned.js");
+  const body = (tag) =>
+    `import fs from "node:fs";
+export const V = async () => {
+  fs.appendFileSync(${JSON.stringify(seen)}, ${JSON.stringify(tag + "\n")});
+  return {};
+};
+// ${tag}
+`;
+  fs.writeFileSync(file, body("v1"));
+  await loadHooks();
+  fs.writeFileSync(file, body("v2-much-longer-tag"));
+  await loadHooks();
+  await loadHooks();
+  assert.equal(
+    fs.readFileSync(seen, "utf8"),
+    "v1\nv2-much-longer-tag\nv2-much-longer-tag\n",
+    "third load reused the edit's copy, not the poisoned canonical URL",
+  );
+  r.cleanup();
+});
+
 test("an unchanged plugin keeps its module state across loads", async () => {
   // The other half: re-importing everything on every rebuild would reset
   // in-flight moves and dedupe maps for reloads that had nothing to do with

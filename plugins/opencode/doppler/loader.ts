@@ -121,15 +121,16 @@ function pluginFns(mod: Record<string, unknown>): Array<[string, Plugin]> {
   return out;
 }
 
-// What the last load saw, so a reload only re-imports what changed. A plugin
-// module is imported once and cached for the life of the process — without a
-// cache-busting key, an instance rebuild after `doppler reload` would re-run
-// this loader against the same stale modules and the edit would stay invisible
-// until a restart. The report already written for `doppler plugin status`
-// carries the stamps, so the comparison needs no new state file.
+// The report `doppler plugin status` already writes doubles as the loader's
+// cross-load memory: the stamp says whether the file changed since the last
+// load, and `copied` says which URL kind executed it — the pair decides the
+// next import (see importTarget). A plugin module is imported once and cached
+// for the life of the process, so without this an instance rebuild would
+// re-run this loader against the same stale module and the edit would stay
+// invisible until a restart.
 type PluginReport = {
   home: string;
-  plugins: Array<{ name: string; file?: string; ok: boolean; error?: string; stamp?: string }>;
+  plugins: Array<{ name: string; file?: string; ok: boolean; error?: string; stamp?: string; copied?: boolean }>;
   at: string;
 };
 
@@ -138,17 +139,29 @@ type PluginReport = {
 // the file's stamp. Keying by entry name would re-import a named-export plugin
 // on every load — correct output, but the module state the unchanged path is
 // meant to preserve would never survive one.
-function lastStamps(home: string): { known: Map<string, string>; hadReport: boolean } {
+function lastStamps(home: string): {
+  known: Map<string, string>;
+  copied: Map<string, boolean>;
+  hadReport: boolean;
+} {
   try {
     const report = JSON.parse(fs.readFileSync(path.join(home, "plugins.loaded.json"), "utf8")) as PluginReport;
     const known = new Map<string, string>();
-    for (const p of report.plugins ?? [])
-      if (typeof p.stamp === "string" && typeof p.file === "string") known.set(p.file, p.stamp);
-    return { known, hadReport: true };
+    const copied = new Map<string, boolean>();
+    for (const p of report.plugins ?? []) {
+      if (typeof p.stamp !== "string" || typeof p.file !== "string") continue;
+      known.set(p.file, p.stamp);
+      // Absent on reports written before this field existed; an old report
+      // cannot say which URL kind executed, and "maybe copied" is the safe
+      // direction — copying re-reads the file either way, while guessing
+      // canonical can serve a poisoned first-load module.
+      if (p.copied !== false) copied.set(p.file, true);
+    }
+    return { known, copied, hadReport: true };
   } catch {
     // No report yet: every file loads fresh, which is exactly what a first
     // load should do.
-    return { known: new Map(), hadReport: false };
+    return { known: new Map(), copied: new Map(), hadReport: false };
   }
 }
 
@@ -219,13 +232,20 @@ function pruneCache(home: string, keep: Set<string>): void {
   }
 }
 
-// Unchanged since the last load imports the canonical URL — the ESM cache hit,
-// which keeps the module's state (in-flight moves, dedupe maps) alive across
-// reloads that had nothing to do with it. Changed imports the executed copy,
-// so the rebuilt instance runs the edited file. A first load with no report
-// imports everything canonical: a fresh process has an empty module cache, so
-// the copy would buy nothing and the stack traces stay pointed at the real
-// files. Returns the cache filename when one was used, so the caller can prune
+// Bun caches file: URLs for the life of the process, so the canonical URL
+// serves the content of its FIRST import forever — once an edit has executed
+// through a copy, any later "unchanged → canonical" choice reverts to the
+// first-load module. The report's stamp + copied pair is what steers this:
+//   no report          → canonical: fresh process, empty cache, the import
+//                        reads the real file and stack traces point at it;
+//   stamp changed      → copy: the edited file under a stamp-named path is
+//                        the only bust Bun honors;
+//   stamp same, copied → copy: same stamp, same filename, a cache hit on the
+//                        URL that actually holds this content (state kept);
+//   stamp same, not copied → canonical: no edit has ever executed for this
+//                        file in this process, so first-import content IS
+//                        current, and the cache hit keeps module state.
+// Returns the cache filename when one was used, so the caller can prune
 // around it.
 function importTarget(
   home: string,
@@ -233,15 +253,20 @@ function importTarget(
   file: string,
   stamp: string,
   known: Map<string, string>,
+  copied: Map<string, boolean>,
   hadReport: boolean,
 ): { url: string; cached: string | null } {
   const full = path.join(dir, file);
   const label = `${file.replace(/\.[cm]?[jt]s$/, "")}`;
-  if (hadReport && known.get(file) !== stamp) {
+  const canonical = () => ({ url: pathToFileURL(full).href, cached: null as string | null });
+  if (!hadReport) return canonical();
+  if (known.get(file) !== stamp || copied.get(file) === true) {
     const cached = cachedCopy(home, dir, file, label, stamp);
     if (cached) return { url: pathToFileURL(path.join(cacheDir(home), cached)).href, cached };
+    // A cache that cannot be written is not a reason to fail the session.
+    return canonical();
   }
-  return { url: pathToFileURL(full).href, cached: null };
+  return canonical();
 }
 
 
@@ -278,8 +303,15 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
   }
   const dir = path.join(home, "plugins");
   const files = rootPlugins(home);
-  const { known, hadReport } = lastStamps(home);
-  const loaded: Array<{ name: string; file: string; ok: boolean; error?: string; stamp?: string }> = [];
+  const { known, copied, hadReport } = lastStamps(home);
+  const loaded: Array<{
+    name: string;
+    file: string;
+    ok: boolean;
+    error?: string;
+    stamp?: string;
+    copied?: boolean;
+  }> = [];
   const keep = new Set<string>();
 
   const hooks: Record<string, unknown> = {};
@@ -313,9 +345,10 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
     // actually executed even if an edit lands mid-load.
     const stamp = pluginStamp(full);
     try {
-      const target = importTarget(home, dir, file, stamp, known, hadReport);
+      const target = importTarget(home, dir, file, stamp, known, copied, hadReport);
       if (target.cached) keep.add(target.cached);
       let mod: Record<string, unknown>;
+      let used = target;
       try {
         mod = (await import(target.url)) as Record<string, unknown>;
       } catch (first) {
@@ -323,19 +356,21 @@ export const DopplerPluginLoader: Plugin = async (input: PluginInput) => {
         // The copy exists on disk but the runtime could not see it — observed
         // once live as an ENOENT for a file that was provably there. One retry
         // through a fresh copy before giving up on the file.
-        const retry = importTarget(home, dir, file, `${stamp}#retry`, known, hadReport);
+        const retry = importTarget(home, dir, file, `${stamp}#retry`, known, copied, hadReport);
         if (retry.cached) keep.add(retry.cached);
         mod = (await import(retry.url)) as Record<string, unknown>;
+        used = retry;
       }
+      const ranCopy = !!used.cached;
       const fns = pluginFns(mod);
       if (!fns.length) {
-        loaded.push({ name: label, file, ok: false, error: "exports no plugin function", stamp });
+        loaded.push({ name: label, file, ok: false, error: "exports no plugin function", stamp, copied: ranCopy });
         continue;
       }
       for (const [name, fn] of fns) {
         const result = await fn(input);
         register(name === "default" ? label : `${label}:${name}`, result as Record<string, unknown>);
-        loaded.push({ name: name === "default" ? label : `${label}:${name}`, file, ok: true, stamp });
+        loaded.push({ name: name === "default" ? label : `${label}:${name}`, file, ok: true, stamp, copied: ranCopy });
       }
     } catch (err) {
       loaded.push({ name: label, file, ok: false, error: String((err as Error)?.message ?? err), stamp });
