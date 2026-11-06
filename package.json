@@ -21,7 +21,8 @@
     "AGENTS.md",
     "LICENSE",
     "install.sh",
-    "dist"
+    "dist",
+    "scripts/"
   ],
   "keywords": [
     "ai",
@@ -48,6 +49,7 @@
     "tag": "latest"
   },
   "exports": {
-    "./*": "./dist/*.js"
+    "./*": "./dist/*.js",
+    "./*.js": "./dist/*.js"
   }
 }
