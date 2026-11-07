@@ -175,6 +175,34 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
+      # npm's oidc() never throws: a failed GitHub fetch, a rejected exchange
+      # or missing claims are all logged at silly/verbose, and publish.js then
+      # throws plain ENEEDAUTH because no token was set — the registry's reason
+      # never reaches the log. The exchange is validated per package (trusted
+      # publisher claims), so the core publishing proves nothing about the
+      # adapter's entry. Re-run npm's two requests by hand: GitHub fetch, then
+      # POST /-/npm/v1/oidc/token/exchange/package/<escaped>. Before the
+      # tombstone so it still answers for an already-published version.
+      - name: Probe the OIDC exchange (ENEEDAUTH hides the reason)
+        run: |
+          set -euo pipefail
+          EXCH="$RUNNER_TEMP/oidc-exchange.json"
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || { echo "::error::no ACTIONS_ID_TOKEN_REQUEST_URL"; exit 1; }
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || { echo "::error::no ACTIONS_ID_TOKEN_REQUEST_TOKEN"; exit 1; }
+          RESP=$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org")
+          CODE=$(printf '%s' "$RESP" | tail -1)
+          BODY=$(printf '%s' "$RESP" | sed '$d')
+          echo "github id_token http $CODE"
+          if [ "$CODE" != 200 ]; then printf '%s\n' "$BODY"; exit 1; fi
+          ID_TOKEN=$(printf '%s' "$BODY" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).value||'')}catch(e){process.stdout.write('')}})")
+          [ -n "$ID_TOKEN" ] || { echo "::error::GitHub returned no token value"; exit 1; }
+          printf '%s' "$ID_TOKEN" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const p=JSON.parse(Buffer.from(d.split('.')[1],'base64').toString());console.log('claims '+JSON.stringify({repository:p.repository,workflow:p.workflow,environment:p.environment,ref:p.ref,sub:p.sub}))})"
+          ESC=$(node -p "require('./package.json').name.replace(/^@/,'').replace(/\//g,'-')")
+          CODE=$(curl -sS -o "$EXCH" -w '%{http_code}' -X POST -H "Authorization: Bearer ${ID_TOKEN}" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${ESC}")
+          echo "exchange http $CODE for ${ESC}"
+          node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);if(j.token)j.token='<redacted>';console.log(JSON.stringify(j))}catch(e){console.log(d)}})" < "$EXCH"
+          [ "$CODE" = 200 ] || exit 1
+
       - name: Refuse a version the registry has already seen
         run: |
           set -euo pipefail
