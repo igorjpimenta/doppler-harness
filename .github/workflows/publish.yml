@@ -186,6 +186,20 @@ jobs:
           fi
           echo "$PKG@$VERSION is unused on the registry"
 
+      # Same two-cause diagnostic as the core job: no OIDC request vars means
+      # GitHub did not grant id-token:write; vars present means the registry
+      # rejected the exchange (trusted publisher absent or misnamed on
+      # npmjs.com). Placed before the build so it fails fast.
+      - name: Diagnose OIDC availability
+        run: |
+          set -euo pipefail
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "id-token: job HAS the OIDC request vars -> failure is npm-side (trusted publisher config)"
+          else
+            echo "::error::id-token: job has NO OIDC request vars -> GitHub did not grant id-token:write"
+            exit 1
+          fi
+
       # One node_modules tree only: the build spans adapter files and core
       # src, so installing both roots yields two @opencode-ai/sdk copies whose
       # OpencodeClient types do not unify (TS2345 on every call site). The
