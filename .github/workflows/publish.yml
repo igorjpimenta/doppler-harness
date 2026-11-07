@@ -197,11 +197,24 @@ jobs:
           ID_TOKEN=$(printf '%s' "$BODY" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).value||'')}catch(e){process.stdout.write('')}})")
           [ -n "$ID_TOKEN" ] || { echo "::error::GitHub returned no token value"; exit 1; }
           printf '%s' "$ID_TOKEN" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const p=JSON.parse(Buffer.from(d.split('.')[1],'base64').toString());console.log('claims '+JSON.stringify({repository:p.repository,workflow:p.workflow,environment:p.environment,ref:p.ref,sub:p.sub}))})"
-          ESC=$(node -p "require('./package.json').name.replace(/^@/,'').replace(/\//g,'-')")
-          CODE=$(curl -sS -o "$EXCH" -w '%{http_code}' -X POST -H "Authorization: Bearer ${ID_TOKEN}" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${ESC}")
-          echo "exchange http $CODE for ${ESC}"
-          node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);if(j.token)j.token='<redacted>';console.log(JSON.stringify(j))}catch(e){console.log(d)}})" < "$EXCH"
-          [ "$CODE" = 200 ] || exit 1
+          # npa escapedName keeps the @ and escapes only the slash: npm itself
+          # requests /exchange/package/@scope%2fname. The dash form (which v1
+          # of this probe used) names a different, nonexistent package — the
+          # registry 404s it literally and the answer describes the wrong
+          # request. Probe the publishing package, then the core package with
+          # the same token: identical records, so both should answer alike.
+          PROBE() {
+            local pkg="$1" esc
+            esc=$(printf '%s' "$pkg" | sed 's|/|%2f|g')
+            PROBE_CODE=$(curl -sS -o "$EXCH" -w '%{http_code}' -X POST -H "Authorization: Bearer ${ID_TOKEN}" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${esc}")
+            printf 'exchange http %s for %s : ' "$PROBE_CODE" "$pkg" >&2
+            node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);if(j.token)j.token='<redacted>';console.log(JSON.stringify(j))}catch(e){console.log(d)}})" < "$EXCH" >&2
+          }
+          PROBE "@igorjpimenta/doppler-harness"
+          CORE_CODE=$PROBE_CODE
+          PROBE "@igorjpimenta/doppler-opencode"
+          ADAPTER_CODE=$PROBE_CODE
+          [ "$ADAPTER_CODE" = 200 ] || exit 1
 
       - name: Refuse a version the registry has already seen
         run: |
@@ -238,4 +251,7 @@ jobs:
       - run: npm ci
         working-directory: .
       - run: npm run build
-      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+      # silly so npm's own oidc/http lines land in the log: oidc() logs every
+      # failure mode at verbose only (npm/cli #9923), and default loglevel
+      # reports nothing but ENEEDAUTH.
+      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
