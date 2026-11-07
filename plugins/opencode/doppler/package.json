@@ -1,6 +1,6 @@
 {
   "name": "@igorjpimenta/doppler-opencode",
-  "version": "2026.11.4-beta.1",
+  "version": "2026.11.6-beta.1",
   "description": "OpenCode bridge for doppler-harness: the entry (setup + legacy server), the plugin loader, and the engine self-update.",
   "license": "MIT",
   "type": "module",
