@@ -25,6 +25,8 @@
     "dist"
   ],
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.33",
+    "@types/node": "^22.10.0",
     "typescript": "^5.9.0"
   }
 }
