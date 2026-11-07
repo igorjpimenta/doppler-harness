@@ -1,15 +1,16 @@
-# Publishes a release to npm from the tag it names, and refuses to publish a
-# version the registry has already seen.
+# Publishes a release to npm from the tag it names. A version the registry has
+# ever held is never reused: a live version is skipped so re-runs are green,
+# an unpublished tombstone fails hard — npm's rejection for those arrives only
+# AFTER the upload, which is why `time` (not `versions`) is the source of
+# truth.
 #
-# Auth is Trusted Publishing: npm exchanges this job's OIDC identity for a
-# short-lived publish token, scoped to this repo and this workflow. There is no
-# token to store, leak, or rotate, and npm's 2FA on the owner account stays in
-# force — which matters, because a granular token that bypasses 2FA can publish
-# but is refused for unpublish outright.
-#
-# Requires, once, on npmjs.com under the package: Access → Trusted Publisher →
-# repository igorjpimenta/doppler-harness, workflow publish.yml. Optional: an
-# environment name, which then also has to be selected here.
+# Auth is the NPM_TOKEN repository secret — a granular token with read-write
+# on @igorjpimenta/doppler-harness and @igorjpimenta/doppler-opencode — the
+# pattern igorjpimenta/winch uses for its npmjs package. setup-node's
+# registry-url writes _authToken=${NODE_AUTH_TOKEN} into the runner npmrc;
+# each publish step supplies the secret as NODE_AUTH_TOKEN. id-token: write
+# remains only so `npm publish --provenance` can attest via sigstore OIDC; it
+# is not an auth path.
 name: publish
 
 on:
@@ -42,22 +43,6 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Trusted Publishing is OIDC: npm >= 11.5.1 exchanges the job's id-token
-      # for a registry token. setup-node's registry-url also writes an
-      # _authToken=${NODE_AUTH_TOKEN} line into the npmrc it points at; with no
-      # NODE_AUTH_TOKEN in the environment that expands to empty, npm reads it
-      # as "auth is configured", skips the OIDC exchange, and publish dies with
-      # a 404 from the registry. Node 22 ships npm 10 — upgrade, then strip the
-      # line so the exchange can run.
-      - name: Give npm the OIDC-capable CLI and a clean auth config
-        run: |
-          set -euo pipefail
-          npm install -g npm@latest
-          npm --version
-          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          sed -i '/_authToken/d' "$npmrc"
-          cat "$npmrc"
-
       - name: Name this job what it is publishing
         id: meta
         run: |
@@ -78,37 +63,36 @@ jobs:
           echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
       # A version the registry has ever held — published, or published and
-      # unpublished — is permanently unusable, and npm's rejection arrives only
-      # AFTER the upload. `time` lists those tombstones; `versions` omits them,
-      # so checking only the latter is how a rename-then-unpublish sequence
-      # walks into a version that can never be published.
-      - name: Refuse a version the registry has already seen
+      # unpublished — is permanently unusable. `time` lists those tombstones;
+      # `versions` omits them, so checking only the latter is how a
+      # rename-then-unpublish sequence walks into a version that can never be
+      # published. A live version, by contrast, is a re-run: skip it.
+      - name: Refuse a version the registry has ever seen; skip a live one
+        id: gate
         run: |
           set -euo pipefail
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
-            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
-            exit 1
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "::notice::$PKG@$VERSION is already published; skipping (tag kept for provenance)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::$PKG@$VERSION was published before and unpublished — a seen version can never return; pick a new version"
+              exit 1
+            fi
+          else
+            echo "$PKG@$VERSION is unused on the registry"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "$PKG@$VERSION is unused on the registry"
 
       - run: npm ci
 
-      # ENEEDAUTH has two distinct causes — the job never received the OIDC
-      # request vars, or npm's exchange failed (trusted publisher absent or
-      # misnamed on npmjs.com). The publish error alone does not say which.
-      - name: Diagnose OIDC availability
-        run: |
-          set -euo pipefail
-          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "id-token: job HAS the OIDC request vars -> failure is npm-side (trusted publisher config)"
-          else
-            echo "::error::id-token: job has NO OIDC request vars -> GitHub did not grant id-token:write"
-            exit 1
-          fi
-
-      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+      - name: Publish
+        if: steps.gate.outputs.skip != 'true'
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Record what is now the default install
         run: |
@@ -116,7 +100,11 @@ jobs:
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           DIST_TAG="${{ steps.meta.outputs.dist-tag }}"
-          echo "published $PKG@$VERSION under $DIST_TAG"
+          if [ "${{ steps.gate.outputs.skip }}" = "true" ]; then
+            echo "$PKG@$VERSION was already live — dist-tags now:"
+          else
+            echo "published $PKG@$VERSION under $DIST_TAG"
+          fi
           npm view "$PKG" dist-tags --json
           npm view "$PKG" versions --json
 
@@ -139,17 +127,6 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-
-      # Same OIDC prerequisites as the core job: npm >= 11.5.1 for the
-      # id-token exchange, and no _authToken line left to pre-empt it.
-      - name: Give npm the OIDC-capable CLI and a clean auth config
-        run: |
-          set -euo pipefail
-          npm install -g npm@latest
-          npm --version
-          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          sed -i '/_authToken/d' "$npmrc"
-          cat "$npmrc"
 
       - name: Name this job what it is publishing
         id: meta
@@ -175,57 +152,23 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
-      # npm's oidc() never throws: a failed GitHub fetch, a rejected exchange
-      # or missing claims are all logged at silly/verbose, and publish.js then
-      # throws plain ENEEDAUTH because no token was set — the registry's reason
-      # never reaches the log. The exchange is validated per package (trusted
-      # publisher claims), so the core publishing proves nothing about the
-      # adapter's entry. Re-run npm's two requests by hand: GitHub fetch, then
-      # POST /-/npm/v1/oidc/token/exchange/package/<escaped>. Before the
-      # tombstone so it still answers for an already-published version.
-      - name: Probe the OIDC exchange (ENEEDAUTH hides the reason)
-        run: |
-          set -euo pipefail
-          EXCH="$RUNNER_TEMP/oidc-exchange.json"
-          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || { echo "::error::no ACTIONS_ID_TOKEN_REQUEST_URL"; exit 1; }
-          [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || { echo "::error::no ACTIONS_ID_TOKEN_REQUEST_TOKEN"; exit 1; }
-          RESP=$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org")
-          CODE=$(printf '%s' "$RESP" | tail -1)
-          BODY=$(printf '%s' "$RESP" | sed '$d')
-          echo "github id_token http $CODE"
-          if [ "$CODE" != 200 ]; then printf '%s\n' "$BODY"; exit 1; fi
-          ID_TOKEN=$(printf '%s' "$BODY" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).value||'')}catch(e){process.stdout.write('')}})")
-          [ -n "$ID_TOKEN" ] || { echo "::error::GitHub returned no token value"; exit 1; }
-          printf '%s' "$ID_TOKEN" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const p=JSON.parse(Buffer.from(d.split('.')[1],'base64').toString());console.log('claims '+JSON.stringify({repository:p.repository,workflow:p.workflow,environment:p.environment,ref:p.ref,sub:p.sub}))})"
-          ESC=$(node -p "require('./package.json').name.replace(/^@/,'').replace(/\//g,'-')")
-          CODE=$(curl -sS -o "$EXCH" -w '%{http_code}' -X POST -H "Authorization: Bearer ${ID_TOKEN}" "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${ESC}")
-          echo "exchange http $CODE for ${ESC}"
-          node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);if(j.token)j.token='<redacted>';console.log(JSON.stringify(j))}catch(e){console.log(d)}})" < "$EXCH"
-          [ "$CODE" = 200 ] || exit 1
-
-      - name: Refuse a version the registry has already seen
+      - name: Refuse a version the registry has ever seen; skip a live one
+        id: gate
         run: |
           set -euo pipefail
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
-            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
-            exit 1
-          fi
-          echo "$PKG@$VERSION is unused on the registry"
-
-      # Same two-cause diagnostic as the core job: no OIDC request vars means
-      # GitHub did not grant id-token:write; vars present means the registry
-      # rejected the exchange (trusted publisher absent or misnamed on
-      # npmjs.com). Placed before the build so it fails fast.
-      - name: Diagnose OIDC availability
-        run: |
-          set -euo pipefail
-          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "id-token: job HAS the OIDC request vars -> failure is npm-side (trusted publisher config)"
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "::notice::$PKG@$VERSION is already published; skipping (tag kept for provenance)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::$PKG@$VERSION was published before and unpublished — a seen version can never return; pick a new version"
+              exit 1
+            fi
           else
-            echo "::error::id-token: job has NO OIDC request vars -> GitHub did not grant id-token:write"
-            exit 1
+            echo "$PKG@$VERSION is unused on the registry"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       # One node_modules tree only: the build spans adapter files and core
@@ -238,4 +181,21 @@ jobs:
       - run: npm ci
         working-directory: .
       - run: npm run build
-      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+
+      - name: Publish
+        if: steps.gate.outputs.skip != 'true'
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Every adapter release so far is a beta, and the README's versionless
+      # install must resolve the current one — so latest rides along with each
+      # beta, exactly as winch-opencode's workflow does. A stable release takes
+      # latest natively through the publish tag.
+      - name: Point latest at this beta
+        if: steps.meta.outputs.dist-tag == 'beta'
+        run: |
+          set -euo pipefail
+          npm dist-tag add "@igorjpimenta/doppler-opencode@${{ steps.meta.outputs.version }}" latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
