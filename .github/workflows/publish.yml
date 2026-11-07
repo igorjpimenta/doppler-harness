@@ -186,10 +186,14 @@ jobs:
           fi
           echo "$PKG@$VERSION is unused on the registry"
 
-      # The build needs no dependencies — the source imports the core by
-      # monorepo-relative path and the rewrite step happens after tsc. The
-      # install below exists for npm's own packaging scripts and for the
-      # dependency the published package declares.
+      # The adapter build typechecks the core source in place (relative
+      # imports into src/), so the repo root's devDependencies — @types/node,
+      # @opencode-ai/plugin, which core src/report.ts imports — must be
+      # installed; a working-directory npm install never sees them. The
+      # subdir install covers the adapter's own deps and the dependency the
+      # published package declares.
+      - run: npm ci
+        working-directory: .
       - run: npm install
       - run: npm run build
       - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
