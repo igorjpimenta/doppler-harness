@@ -186,14 +186,14 @@ jobs:
           fi
           echo "$PKG@$VERSION is unused on the registry"
 
-      # The adapter build typechecks the core source in place (relative
-      # imports into src/), so the repo root's devDependencies — @types/node,
-      # @opencode-ai/plugin, which core src/report.ts imports — must be
-      # installed; a working-directory npm install never sees them. The
-      # subdir install covers the adapter's own deps and the dependency the
-      # published package declares.
+      # One node_modules tree only: the build spans adapter files and core
+      # src, so installing both roots yields two @opencode-ai/sdk copies whose
+      # OpencodeClient types do not unify (TS2345 on every call site). The
+      # root npm ci already covers the adapter's declared devDependencies —
+      # the same three packages — and npm run resolves tsc from ancestor
+      # node_modules/.bin (the adapter has no node_modules of its own in any
+      # working checkout).
       - run: npm ci
         working-directory: .
-      - run: npm install
       - run: npm run build
       - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
