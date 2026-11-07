@@ -19,7 +19,7 @@
     "test": "node --test --test-concurrency=1 \"plugins/opencode/doppler/*.test.mjs\""
   },
   "dependencies": {
-    "@igorjpimenta/doppler-harness": "^2026.11.4-beta.1"
+    "@igorjpimenta/doppler-harness": "^2026.11.6-beta.1"
   },
   "files": [
     "dist"
