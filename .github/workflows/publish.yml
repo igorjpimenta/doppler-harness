@@ -4,13 +4,17 @@
 # AFTER the upload, which is why `time` (not `versions`) is the source of
 # truth.
 #
-# Auth is the NPM_TOKEN repository secret — a granular token with read-write
-# on @igorjpimenta/doppler-harness and @igorjpimenta/doppler-opencode — the
-# pattern igorjpimenta/winch uses for its npmjs package. setup-node's
-# registry-url writes _authToken=${NODE_AUTH_TOKEN} into the runner npmrc;
-# each publish step supplies the secret as NODE_AUTH_TOKEN. id-token: write
-# remains only so `npm publish --provenance` can attest via sigstore OIDC; it
-# is not an auth path.
+# Auth is Trusted Publishing (OIDC): npm exchanges this job's id-token for a
+# short-lived publish token. Trusted-publisher entries exist on both packages
+# (repository igorjpimenta/doppler-harness, file publish.yml) and the core
+# published through this path before; the adapter's exchange is the open
+# question this workflow is built to answer — npm logs every exchange failure
+# at verbose only (npm/cli #9923), so publish runs --loglevel silly.
+# NODE_AUTH_TOKEN is pinned empty on the publish steps: setup-node's
+# registry-url leaves an XXXXX placeholder in the job env, and a non-empty
+# token changes the failure from ENEEDAUTH into a PUT 404 that hides the
+# exchange entirely. The beta→latest dist-tag step still uses NPM_TOKEN —
+# the trust entries grant no manageDistTags.
 name: publish
 
 on:
@@ -88,11 +92,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Publish
+      # npm >= 11.5.1 does the id-token exchange; node 22 bundles npm 10,
+      # which has no trusted publishing at all and would fail silently.
+      - name: Give npm the OIDC-capable CLI
+        run: npm install -g npm@latest && npm --version
+
+      - name: Publish (trusted publishing; silly so a failed exchange is visible)
         if: steps.gate.outputs.skip != 'true'
-        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ""
 
       - name: Record what is now the default install
         run: |
@@ -182,11 +191,16 @@ jobs:
         working-directory: .
       - run: npm run build
 
-      - name: Publish
+      # npm >= 11.5.1 does the id-token exchange; node 22 bundles npm 10,
+      # which has no trusted publishing at all and would fail silently.
+      - name: Give npm the OIDC-capable CLI
+        run: npm install -g npm@latest && npm --version
+
+      - name: Publish (trusted publishing; silly so a failed exchange is visible)
         if: steps.gate.outputs.skip != 'true'
-        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ""
 
       # Every adapter release so far is a beta, and the README's versionless
       # install must resolve the current one — so latest rides along with each
