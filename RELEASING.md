@@ -42,10 +42,13 @@ One repo, two npm packages, one engine:
 
 Both packages carry the same date, and every release is cut as
 `YYYY.M.D-beta.N` — betas only until a version is promoted, never a bare
-date. The adapter declares a semver range on the core (including its
-prerelease), so **release the core first**: the adapter job runs
-`npm install` against that range and cannot resolve a version that is not
-on the registry yet. A core change that affects
+date. The adapter declares a semver range on the core, so **release the
+core first**: the adapter job runs `npm install` against that range and
+cannot resolve a version that is not on the registry yet. Bump that range
+to the core's new version in the same release — a caret range over a
+prerelease only admits prereleases of the same `X.Y.Z` tuple, so
+`^2026.11.4-beta.1` resolves `2026.11.4-beta.1` and never
+`2026.11.6-beta.1` (the stale pick is also the deprecated one). A core change that affects
 the bridge moves both versions — they share the date, and the adapter's range
 pins the pairing. The adapter's build needs no install (its source imports the
 core by monorepo-relative path and the rewrite step runs after `tsc`); the

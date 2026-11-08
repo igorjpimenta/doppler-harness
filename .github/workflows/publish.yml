@@ -1,15 +1,20 @@
-# Publishes a release to npm from the tag it names, and refuses to publish a
-# version the registry has already seen.
+# Publishes a release to npm from the tag it names. A version the registry has
+# ever held is never reused: a live version is skipped so re-runs are green,
+# an unpublished tombstone fails hard — npm's rejection for those arrives only
+# AFTER the upload, which is why `time` (not `versions`) is the source of
+# truth.
 #
-# Auth is Trusted Publishing: npm exchanges this job's OIDC identity for a
-# short-lived publish token, scoped to this repo and this workflow. There is no
-# token to store, leak, or rotate, and npm's 2FA on the owner account stays in
-# force — which matters, because a granular token that bypasses 2FA can publish
-# but is refused for unpublish outright.
-#
-# Requires, once, on npmjs.com under the package: Access → Trusted Publisher →
-# repository igorjpimenta/doppler-harness, workflow publish.yml. Optional: an
-# environment name, which then also has to be selected here.
+# Auth is Trusted Publishing (OIDC): npm exchanges this job's id-token for a
+# short-lived publish token. Trusted-publisher entries exist on both packages
+# (repository igorjpimenta/doppler-harness, file publish.yml) and the core
+# published through this path before; the adapter's exchange is the open
+# question this workflow is built to answer — npm logs every exchange failure
+# at verbose only (npm/cli #9923), so publish runs --loglevel silly.
+# NODE_AUTH_TOKEN is pinned empty on the publish steps: setup-node's
+# registry-url leaves an XXXXX placeholder in the job env, and a non-empty
+# token changes the failure from ENEEDAUTH into a PUT 404 that hides the
+# exchange entirely. The beta→latest dist-tag step still uses NPM_TOKEN —
+# the trust entries grant no manageDistTags.
 name: publish
 
 on:
@@ -62,23 +67,41 @@ jobs:
           echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
       # A version the registry has ever held — published, or published and
-      # unpublished — is permanently unusable, and npm's rejection arrives only
-      # AFTER the upload. `time` lists those tombstones; `versions` omits them,
-      # so checking only the latter is how a rename-then-unpublish sequence
-      # walks into a version that can never be published.
-      - name: Refuse a version the registry has already seen
+      # unpublished — is permanently unusable. `time` lists those tombstones;
+      # `versions` omits them, so checking only the latter is how a
+      # rename-then-unpublish sequence walks into a version that can never be
+      # published. A live version, by contrast, is a re-run: skip it.
+      - name: Refuse a version the registry has ever seen; skip a live one
+        id: gate
         run: |
           set -euo pipefail
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
-            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
-            exit 1
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "::notice::$PKG@$VERSION is already published; skipping (tag kept for provenance)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::$PKG@$VERSION was published before and unpublished — a seen version can never return; pick a new version"
+              exit 1
+            fi
+          else
+            echo "$PKG@$VERSION is unused on the registry"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "$PKG@$VERSION is unused on the registry"
 
       - run: npm ci
-      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+
+      # npm >= 11.5.1 does the id-token exchange; node 22 bundles npm 10,
+      # which has no trusted publishing at all and would fail silently.
+      - name: Give npm the OIDC-capable CLI
+        run: npm install -g npm@latest && npm --version
+
+      - name: Publish (trusted publishing; silly so a failed exchange is visible)
+        if: steps.gate.outputs.skip != 'true'
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
+        env:
+          NODE_AUTH_TOKEN: ""
 
       - name: Record what is now the default install
         run: |
@@ -86,7 +109,11 @@ jobs:
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           DIST_TAG="${{ steps.meta.outputs.dist-tag }}"
-          echo "published $PKG@$VERSION under $DIST_TAG"
+          if [ "${{ steps.gate.outputs.skip }}" = "true" ]; then
+            echo "$PKG@$VERSION was already live — dist-tags now:"
+          else
+            echo "published $PKG@$VERSION under $DIST_TAG"
+          fi
           npm view "$PKG" dist-tags --json
           npm view "$PKG" versions --json
 
@@ -114,9 +141,12 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME#doppler-opencode-}"
+          # GITHUB_REF_NAME is the ref the dispatch ran from (main), not the
+          # input — the same expression the core job and the checkout use.
+          REF="${{ inputs.tag || github.event.release.tag_name }}"
+          TAG="${REF#doppler-opencode-}"
           if ! printf '%s' "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "::error::${GITHUB_REF_NAME} is not doppler-opencode-<semver>"
+            echo "::error::${REF} is not doppler-opencode-<semver>"
             exit 1
           fi
           VERSION="$(node -p "require('./package.json').version")"
@@ -131,21 +161,55 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist-tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Refuse a version the registry has already seen
+      - name: Refuse a version the registry has ever seen; skip a live one
+        id: gate
         run: |
           set -euo pipefail
           PKG=$(node -p "require('./package.json').name")
           VERSION="${{ steps.meta.outputs.version }}"
           if npm view "$PKG" time --json | grep -q "\"$VERSION\""; then
-            echo "::error::$PKG@$VERSION was published before — tombstoned or live. Pick a new version; a published version can never be reused."
-            exit 1
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "::notice::$PKG@$VERSION is already published; skipping (tag kept for provenance)"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::$PKG@$VERSION was published before and unpublished — a seen version can never return; pick a new version"
+              exit 1
+            fi
+          else
+            echo "$PKG@$VERSION is unused on the registry"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "$PKG@$VERSION is unused on the registry"
 
-      # The build needs no dependencies — the source imports the core by
-      # monorepo-relative path and the rewrite step happens after tsc. The
-      # install below exists for npm's own packaging scripts and for the
-      # dependency the published package declares.
-      - run: npm install
+      # One node_modules tree only: the build spans adapter files and core
+      # src, so installing both roots yields two @opencode-ai/sdk copies whose
+      # OpencodeClient types do not unify (TS2345 on every call site). The
+      # root npm ci already covers the adapter's declared devDependencies —
+      # the same three packages — and npm run resolves tsc from ancestor
+      # node_modules/.bin (the adapter has no node_modules of its own in any
+      # working checkout).
+      - run: npm ci
+        working-directory: .
       - run: npm run build
-      - run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}"
+
+      # npm >= 11.5.1 does the id-token exchange; node 22 bundles npm 10,
+      # which has no trusted publishing at all and would fail silently.
+      - name: Give npm the OIDC-capable CLI
+        run: npm install -g npm@latest && npm --version
+
+      - name: Publish (trusted publishing; silly so a failed exchange is visible)
+        if: steps.gate.outputs.skip != 'true'
+        run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
+        env:
+          NODE_AUTH_TOKEN: ""
+
+      # Every adapter release so far is a beta, and the README's versionless
+      # install must resolve the current one — so latest rides along with each
+      # beta, exactly as winch-opencode's workflow does. A stable release takes
+      # latest natively through the publish tag.
+      - name: Point latest at this beta
+        if: steps.meta.outputs.dist-tag == 'beta'
+        run: |
+          set -euo pipefail
+          npm dist-tag add "@igorjpimenta/doppler-opencode@${{ steps.meta.outputs.version }}" latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
