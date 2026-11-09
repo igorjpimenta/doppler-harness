@@ -198,11 +198,15 @@ plugins/opencode/doppler — @igorjpimenta/doppler-opencode (the host bridge)
   engine-update.ts                self-update: one unit, dependency carried with the copy
 ```
 
-**Entry points.** The bridge's default export leads with `setup()` — that is
-the entry, and it is what a current opencode reads. `server()` is the legacy form for
-opencode 1.x, kept until that support window closes: a v1 host never calls
-`setup`, a current host never calls `server`, and both return the same behavior in
-the shape their host expects.
+**Entry points.** OpenCode 2 is the default host, and what it reads is
+`setup()` — the bridge's default export. `install` registers the bridge for it
+as a directory in the config's top-level `plugins` array: the package's own
+`exports` resolve to `index.js`, which re-exports the built bridge in `dist/`.
+OpenCode 1.x stays as legacy compatibility until that support window closes:
+it takes an absolute `file://` URL under the singular `plugin` key instead,
+never calls `setup`, and reads `server()` — the legacy export — which a v2 host
+never calls. Both shapes return the same behavior in the shape their host
+expects.
 
 The package ships no content. `install` creates the directories, seeds the
 policy *formats*, and registers the bridge; everything else is yours to write.
@@ -329,9 +333,11 @@ enforcing that bypass is your hook's job. The data-driven `ask` rules in
 `allowlist.json` are unaffected: those compile into OpenCode's own permission
 engine and prompt you for real.
 
-**What does `uninstall` do?** Removes Doppler's `plugin` entry from your config
-and tells you what it left alone. Your `hooks/` and `policy/` directories are
-your files and are not touched; delete `~/.doppler` to remove everything.
+**What does `uninstall` do?** Removes Doppler's entries from your config — the
+OpenCode 2 directory entry under `plugins` and, as legacy compatibility, the
+`file://` entries under `plugin` — and tells you what it left alone. Your
+`hooks/` and `policy/` directories are your files and are not touched; delete
+`~/.doppler` to remove everything.
 
 **Is anything sent anywhere?** No. Nothing leaves the machine. The bridge makes
 exactly one network call, to OpenCode's own server on loopback, to ask it to
@@ -361,7 +367,9 @@ mistaken for a regression.
 
 The bridge is TypeScript and is the only file typed against
 `@opencode-ai/plugin`. What ships is its build output: `npm run build` erases the
-types into `dist/doppler.js`, and that file is what gets registered. Two runtimes
+types into `dist/doppler.js`, and that file is what both registration shapes
+load — the v2 directory entry through `index.js`, the legacy `file://` URL
+naming it directly. Two runtimes
 load plugins — the TUI's Bun and the desktop app's server, which is Node — and
 Node refuses to strip types for a file under `node_modules`, so the source cannot
 be what loads. `erasableSyntaxOnly` keeps the build a pure type-erasure: the
