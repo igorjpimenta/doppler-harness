@@ -15,7 +15,7 @@ Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
 npm install -g @igorjpimenta/doppler-harness
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
@@ -23,16 +23,18 @@ The second package is the host bridge (the entry, the loader, the engine). The
 CLI resolves it like any dependency and names it if it is missing — so a
 half-install says what to run instead of registering nothing.
 
-No version in the command: npm's `latest` dist-tag is the newest release. To
-pin, add one — `npm install -g @igorjpimenta/doppler-harness@<version>` — or
-install straight from the source, which needs no registry at all.
+No version in the core command: npm's `latest` dist-tag is the newest stable,
+and no beta moves it. The bridge has no stable yet, so its lines name `@beta`
+explicitly — that tag holds the newest bridge beta. To pin, add a version —
+`npm install -g @igorjpimenta/doppler-harness@<version>` — or install
+straight from the source, which needs no registry at all.
 
 The versionless GitHub URL serves the newest release's tarball, the same way,
 and works where the registry does not:
 
 ```bash
 npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
@@ -42,7 +44,7 @@ install from the git ref:
 
 ```bash
 npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
