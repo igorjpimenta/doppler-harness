@@ -22,11 +22,17 @@
     "@igorjpimenta/doppler-harness": "^2026.11.6-beta.1"
   },
   "files": [
+    "index.js",
     "dist"
   ],
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.33",
     "@types/node": "^22.10.0",
     "typescript": "^5.9.0"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
   }
 }

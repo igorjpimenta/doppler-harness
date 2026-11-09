@@ -399,7 +399,7 @@ test("doctor names a stale registration from an older install", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     const r = run(m, ["doctor"]);
     assert.equal(r.status, 1);
-    assert.match(out(r), /registered path is stale/);
+    assert.match(out(r), /legacy entry path is stale/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -701,6 +701,32 @@ test("plugin register coexists with the bridge and with the user's own plugins",
   const after = configOf(m);
   assert.equal(after.plugin.length, 3, "bridge + user's + loader, nothing dropped");
   assert.ok(after.plugin.includes("some-user-plugin"), "the user's own plugin is untouched");
+});
+
+test("install registers the directory entry beside the legacy file entry", () => {
+  // A current host resolves a local plugin as a directory and a legacy host
+  // takes the file URL, so one install has to satisfy both shapes from the
+  // same config file.
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  const cfg = configOf(m);
+  assert.equal(cfg.plugin.length, 1, "the legacy entry is still a file URL");
+  assert.match(cfg.plugin[0], /dist\/doppler\.js$/);
+  assert.equal(cfg.plugins.length, 1, "the plugins entry is the adapter directory");
+  assert.match(cfg.plugins[0], /plugins\/opencode\/doppler$/);
+  assert.ok(fs.existsSync(path.join(cfg.plugins[0], "index.js")), "the directory carries its entry");
+
+  const again = run(m, ["install", "opencode"]);
+  assert.match(out(again), /already registered: .*\/doppler"/, "idempotent");
+  assert.equal(configOf(m).plugins.length, 1);
+});
+
+test("uninstall removes the plugins entry as well", () => {
+  const m = machine();
+  run(m, ["install", "opencode"]);
+  const r = run(m, ["uninstall", "opencode"]);
+  assert.match(out(r), /removed: doppler plugins entry/);
+  assert.equal(configOf(m).plugins?.length ?? 0, 0);
 });
 
 test("uninstall removes the loader entry as well as the bridge", () => {

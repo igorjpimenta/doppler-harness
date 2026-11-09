@@ -88,6 +88,10 @@ const ADAPTER_PKG = (() => {
 })();
 const NO_ADAPTER = "@igorjpimenta/doppler-opencode is not installed (npm install @igorjpimenta/doppler-opencode)";
 const BRIDGE = ADAPTER_PKG ? path.join(ADAPTER_PKG, "dist", "doppler.js") : null;
+// The registration is a directory: the host resolves a configured local
+// plugin through the package's own exports. The legacy 1.x shape takes the
+// file URL above — the adapter package carries both.
+const PLUGIN_ENTRY = ADAPTER_PKG;
 const STALE_BRIDGE = path.join(HOME, "opencode", "doppler.ts");
 
 // The plugin loader, same rule as the bridge: built JavaScript in this package,
@@ -252,15 +256,16 @@ function readConfig(p) {
   }
 }
 
-// The bridge is registered by absolute file URL and read in place — the whole
-// point is that nothing is copied into ~/.config/opencode. Percent-encode via
-// pathToFileURL: a personal root containing a space is a valid path and an
+// The legacy (1.x) registration is an absolute file URL, read in place — the
+// whole point is that nothing is copied into ~/.config/opencode. Percent-encode
+// via pathToFileURL: a personal root containing a space is a valid path and an
 // unencoded URL simply fails to load.
 const entry = () => (BRIDGE ? JSON.stringify(pathToFileURL(BRIDGE).href) : JSON.stringify(""));
 
 // Every spelling the engine has ever been registered under is ours to clear:
 // an entry left behind under an older spelling would keep pointing at a file a
-// newer install is free to stop shipping, so register() removes them all first.
+// newer install is free to stop shipping, so the legacy register() removes them
+// all first.
 const isDoppler = (literal) => /\/(dist|opencode)\/doppler\.(mjs|ts|js)"?$/.test(literal);
 
 function register() {
@@ -286,6 +291,54 @@ function unregister() {
   const span = topLevelValueSpan(before, "plugin");
   if (!span) return { path: p, changed: false };
   const after = removeWhere(before, span, isDoppler);
+  if (after === before) return { path: p, changed: false };
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
+// `plugins` is a separate key with a separate shape: it takes directories and
+// packages, and a file URL in it is skipped with a warning. A plain path
+// avoids the URL percent-encoding question on a root with a space.
+const pluginEntry = () => (PLUGIN_ENTRY ? JSON.stringify(PLUGIN_ENTRY) : JSON.stringify(""));
+const isPluginEntry = (literal) => {
+  try {
+    const value = JSON.parse(literal);
+    // An earlier default shape named the pre-split bridge directory; clearing
+    // it keeps an upgrade from registering a path the split removed.
+    // The dev link resolves to the package directory, whose last segment is
+    // `doppler`, so the current entry is compared by value rather than suffix.
+    return (
+      typeof value === "string" &&
+      (value === PLUGIN_ENTRY ||
+        value.endsWith("/doppler-opencode") ||
+        value.endsWith("/doppler-harness/v2"))
+    );
+  } catch {
+    return false;
+  }
+};
+
+function registerPluginEntry() {
+  if (!PLUGIN_ENTRY) {
+    console.log(NO_ADAPTER);
+    return { path: ocConfigPath(), changed: false, missing: true };
+  }
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const cleared = removeWhere(before, topLevelValueSpan(before, "plugins"), isPluginEntry);
+  const after = insertElement(cleared, topLevelValueSpan(cleared, "plugins"), "plugins", pluginEntry());
+  if (after === before) return { path: p, changed: false };
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, after);
+  return { path: p, changed: true };
+}
+
+function unregisterPluginEntry() {
+  const p = ocConfigPath();
+  const before = readConfig(p);
+  const span = topLevelValueSpan(before, "plugins");
+  if (!span) return { path: p, changed: false };
+  const after = removeWhere(before, span, isPluginEntry);
   if (after === before) return { path: p, changed: false };
   fs.writeFileSync(p, after);
   return { path: p, changed: true };
@@ -465,7 +518,9 @@ async function installOpencode() {
     return;
   }
   const r = register();
-  console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${entry()}`);
+  console.log(`${r.changed ? "registered" : "already registered"}: ${r.path} → ${entry()} (legacy)`);
+  const plugin = registerPluginEntry();
+  console.log(`${plugin.changed ? "registered" : "already registered"}: ${plugin.path} → ${pluginEntry()}`);
   verify();
 }
 
@@ -507,12 +562,14 @@ function unregisterLoader() {
 
 function uninstallOpencode() {
   const r = unregister();
-  console.log(`${r.changed ? "removed" : "not present"}: doppler bridge entry in ${r.path}`);
+  console.log(`${r.changed ? "removed" : "not present"}: doppler bridge entry (legacy) in ${r.path}`);
   // The loader is registered by the same installer into the same array, so
   // leaving it behind would keep loading the personal root's plugins after
   // "uninstall" — the one outcome that makes the command a lie.
   const l = unregisterLoader();
   console.log(`${l.changed ? "removed" : "not present"}: doppler plugin loader entry in ${l.path}`);
+  const plugin = unregisterPluginEntry();
+  console.log(`${plugin.changed ? "removed" : "not present"}: doppler plugins entry in ${plugin.path}`);
   console.log(`left in place: ${path.join(HOME, "hooks")} and ${path.join(HOME, "policy")} — your files.`);
   console.log(`delete ${HOME} to remove the personal root entirely.`);
 }
@@ -778,8 +835,8 @@ else if (fs.existsSync(BRIDGE)) ok("bridge file", BRIDGE);
   }
 
   if (registered) {
-    if (registered === BRIDGE) ok("registered in opencode config", registered);
-    else bad("registered path is stale", `points at ${registered}, not ${BRIDGE}`, "doppler install opencode");
+    if (registered === BRIDGE) ok("legacy entry registered", registered);
+    else bad("legacy entry path is stale", `points at ${registered}, not ${BRIDGE}`, "doppler install opencode");
     if (!fs.existsSync(registered)) {
       bad("registered path resolves", `no such file: ${registered}`, "doppler install opencode");
       // "no such file" is true and useless when the package directory is a
@@ -806,7 +863,28 @@ bad(
       warn("registered path is inside node_modules", "npm can repoint that on reinstall; re-run doppler install opencode if it goes missing");
     }
   } else {
-    bad("registered in opencode config", `no doppler entry in ${cfg}`, "doppler install opencode");
+    bad("legacy entry registered", `no legacy file URL in the plugin key of ${cfg}`, "doppler install opencode");
+  }
+
+  // The plugins entry fails independently: a config can be correct for the
+  // legacy key and missing the default's key entirely.
+  const pluginEntries = stringElements(readConfig(cfg), topLevelValueSpan(readConfig(cfg), "plugins"));
+  const pluginLiteral = pluginEntries.find((e) => isPluginEntry(e));
+  let pluginRegistered = null;
+  if (pluginLiteral) {
+    try {
+      pluginRegistered = JSON.parse(pluginLiteral);
+    } catch {
+      pluginRegistered = null;
+    }
+  }
+  if (pluginRegistered) {
+    if (pluginRegistered === PLUGIN_ENTRY) ok("registered (plugins entry)", pluginRegistered);
+    else bad("plugins entry path is stale", `points at ${pluginRegistered}, not ${PLUGIN_ENTRY}`, "doppler install opencode");
+    if (fs.existsSync(path.join(pluginRegistered, "index.js"))) ok("plugins entry resolves");
+    else bad("plugins entry resolves", `no index.js in ${pluginRegistered}`, "doppler install opencode");
+  } else {
+    warn("registered (plugins entry)", `no doppler entry in ${cfg} plugins — the host will not load it`);
   }
 
 // Does OpenCode actually load it? An entry in a file it ignores is
