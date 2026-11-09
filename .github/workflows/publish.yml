@@ -6,15 +6,13 @@
 #
 # Auth is Trusted Publishing (OIDC): npm exchanges this job's id-token for a
 # short-lived publish token. Trusted-publisher entries exist on both packages
-# (repository igorjpimenta/doppler-harness, file publish.yml) and the core
-# published through this path before; the adapter's exchange is the open
-# question this workflow is built to answer — npm logs every exchange failure
-# at verbose only (npm/cli #9923), so publish runs --loglevel silly.
-# NODE_AUTH_TOKEN is pinned empty on the publish steps: setup-node's
-# registry-url leaves an XXXXX placeholder in the job env, and a non-empty
-# token changes the failure from ENEEDAUTH into a PUT 404 that hides the
-# exchange entirely. The beta→latest dist-tag step still uses NPM_TOKEN —
-# the trust entries grant no manageDistTags.
+# (repository igorjpimenta/doppler-harness, file publish.yml, manageDistTags
+# included) and both have published through this path — npm logs every exchange
+# failure at verbose only (npm/cli #9923), so publish runs --loglevel silly.
+# NODE_AUTH_TOKEN is pinned empty on the publish and dist-tag steps:
+# setup-node's registry-url leaves an XXXXX placeholder in the job env, and a
+# non-empty token changes the failure from ENEEDAUTH into a PUT 404 that hides
+# the exchange entirely.
 name: publish
 
 on:
@@ -212,4 +210,4 @@ jobs:
           set -euo pipefail
           npm dist-tag add "@igorjpimenta/doppler-opencode@${{ steps.meta.outputs.version }}" latest
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ""
