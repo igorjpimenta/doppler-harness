@@ -142,10 +142,9 @@ tombstones that `npm view <pkg> versions` omits, and a tombstone is what makes
    so `@latest` keeps pointing at the newest *stable* release. That mirrors
    what `doppler update` already refuses to do on its own — it will not
    install a rebuild over its base automatically — and it keeps semver's "a
-   suffix is a prerelease" reading from demoting the whole day to a beta. The
-   one deliberate exception is the adapter: its `latest` rides every beta too,
-   because the README's versionless install must resolve the current one
-   (the same convention winch-opencode's workflow follows).
+   suffix is a prerelease" reading from demoting the whole day to a beta.
+   No beta moves `latest`, in either package: until the first stable exists,
+   `latest` simply holds the last version that held it.
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.
