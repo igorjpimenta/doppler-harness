@@ -892,7 +892,7 @@ test("the built bridge resolves its core by name under Node", async () => {
   assert.equal(typeof mod.default.server, "function");
 });
 
-test("the package root entry is the v2 directory entry", async () => {
+test("the package root entry is the default plugins directory entry", async () => {
   const entry = path.join(import.meta.dirname, "..", "..", "..", "..", "..", "plugins", "opencode", "doppler", "index.js");
   assert.ok(fs.existsSync(entry), "index.js ships at the package root");
   const mod = await import(pathToFileURL(entry).href);

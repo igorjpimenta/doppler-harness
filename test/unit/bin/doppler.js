@@ -704,14 +704,14 @@ test("plugin register coexists with the bridge and with the user's own plugins",
 });
 
 test("install registers the OpenCode 2 directory entry beside the file entry", () => {
-  // V2 resolves a local plugin as a directory and skips a file URL, so the one
-  // install has to satisfy both runtimes from the same config file.
+  // OpenCode 2 resolves a local plugin as a directory and skips a file URL, so
+  // the one install has to satisfy both host shapes from the same config file.
   const m = machine();
   run(m, ["install", "opencode"]);
   const cfg = configOf(m);
-  assert.equal(cfg.plugin.length, 1, "the V1 entry is still a file URL");
+  assert.equal(cfg.plugin.length, 1, "the legacy entry is still a file URL");
   assert.match(cfg.plugin[0], /dist\/doppler\.js$/);
-  assert.equal(cfg.plugins.length, 1, "the V2 entry is the adapter directory");
+  assert.equal(cfg.plugins.length, 1, "the plugins entry is the adapter directory");
   assert.match(cfg.plugins[0], /plugins\/opencode\/doppler$/);
   assert.ok(fs.existsSync(path.join(cfg.plugins[0], "index.js")), "the directory carries its entry");
 
