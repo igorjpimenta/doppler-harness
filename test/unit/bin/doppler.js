@@ -399,7 +399,7 @@ test("doctor names a stale registration from an older install", () => {
     fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
     const r = run(m, ["doctor"]);
     assert.equal(r.status, 1);
-    assert.match(out(r), /registered path is stale/);
+    assert.match(out(r), /legacy entry path is stale/);
   } finally {
     fs.rmSync(m.home, { recursive: true, force: true });
   }
@@ -703,9 +703,10 @@ test("plugin register coexists with the bridge and with the user's own plugins",
   assert.ok(after.plugin.includes("some-user-plugin"), "the user's own plugin is untouched");
 });
 
-test("install registers the OpenCode 2 directory entry beside the file entry", () => {
-  // OpenCode 2 resolves a local plugin as a directory and skips a file URL, so
-  // the one install has to satisfy both host shapes from the same config file.
+test("install registers the directory entry beside the legacy file entry", () => {
+  // A current host resolves a local plugin as a directory and a legacy host
+  // takes the file URL, so one install has to satisfy both shapes from the
+  // same config file.
   const m = machine();
   run(m, ["install", "opencode"]);
   const cfg = configOf(m);
@@ -716,15 +717,15 @@ test("install registers the OpenCode 2 directory entry beside the file entry", (
   assert.ok(fs.existsSync(path.join(cfg.plugins[0], "index.js")), "the directory carries its entry");
 
   const again = run(m, ["install", "opencode"]);
-  assert.match(out(again), /already registered: .*OpenCode 2/, "idempotent");
+  assert.match(out(again), /already registered: .*\/doppler"/, "idempotent");
   assert.equal(configOf(m).plugins.length, 1);
 });
 
-test("uninstall removes the OpenCode 2 entry as well", () => {
+test("uninstall removes the plugins entry as well", () => {
   const m = machine();
   run(m, ["install", "opencode"]);
   const r = run(m, ["uninstall", "opencode"]);
-  assert.match(out(r), /removed: doppler OpenCode 2 entry/);
+  assert.match(out(r), /removed: doppler plugins entry/);
   assert.equal(configOf(m).plugins?.length ?? 0, 0);
 });
 
