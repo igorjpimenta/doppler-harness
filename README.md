@@ -15,7 +15,7 @@ Requirements: macOS or Linux, Node 18+, `git`, and OpenCode installed.
 
 ```bash
 npm install -g @igorjpimenta/doppler-harness
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
@@ -23,16 +23,18 @@ The second package is the host bridge (the entry, the loader, the engine). The
 CLI resolves it like any dependency and names it if it is missing — so a
 half-install says what to run instead of registering nothing.
 
-No version in the command: npm's `latest` dist-tag is the newest release. To
-pin, add one — `npm install -g @igorjpimenta/doppler-harness@<version>` — or
-install straight from the source, which needs no registry at all.
+No version in the core command: npm's `latest` dist-tag is the newest stable,
+and no beta moves it. The bridge has no stable yet, so its lines name `@beta`
+explicitly — that tag holds the newest bridge beta. To pin, add a version —
+`npm install -g @igorjpimenta/doppler-harness@<version>` — or install
+straight from the source, which needs no registry at all.
 
 The versionless GitHub URL serves the newest release's tarball, the same way,
 and works where the registry does not:
 
 ```bash
 npm install -g https://github.com/igorjpimenta/doppler-harness/releases/latest/download/igorjpimenta-doppler-harness.tgz
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
@@ -42,7 +44,7 @@ install from the git ref:
 
 ```bash
 npm install -g --install-links=true github:igorjpimenta/doppler-harness#<version>
-npm install -g @igorjpimenta/doppler-opencode
+npm install -g @igorjpimenta/doppler-opencode@beta
 doppler install opencode
 ```
 
@@ -196,11 +198,13 @@ plugins/opencode/doppler — @igorjpimenta/doppler-opencode (the host bridge)
   engine-update.ts                self-update: one unit, dependency carried with the copy
 ```
 
-**Entry points.** The bridge's default export leads with `setup()` — that is
-the entry, and it is what a current opencode reads. `server()` is the legacy form for
-opencode 1.x, kept until that support window closes: a v1 host never calls
-`setup`, a current host never calls `server`, and both return the same behavior in
-the shape their host expects.
+**Entry points.** The bridge's default export is `setup()`, and the host reads it
+as a directory entry under the config's top-level `plugins` array: the package's
+own `exports` resolve to `index.js`, which re-exports the built bridge in `dist/`.
+OpenCode 1.x stays as legacy compatibility until that support window closes: it
+takes an absolute `file://` URL under the singular `plugin` key instead, never
+calls `setup`, and reads `server()` — the legacy export — which a current host
+never calls. Both shapes return the same behavior in the shape their host expects.
 
 The package ships no content. `install` creates the directories, seeds the
 policy *formats*, and registers the bridge; everything else is yours to write.
@@ -327,9 +331,11 @@ enforcing that bypass is your hook's job. The data-driven `ask` rules in
 `allowlist.json` are unaffected: those compile into OpenCode's own permission
 engine and prompt you for real.
 
-**What does `uninstall` do?** Removes Doppler's `plugin` entry from your config
-and tells you what it left alone. Your `hooks/` and `policy/` directories are
-your files and are not touched; delete `~/.doppler` to remove everything.
+**What does `uninstall` do?** Removes Doppler's entries from your config — the
+directory entry under `plugins` and, as legacy compatibility, the
+`file://` entries under `plugin` — and tells you what it left alone. Your
+`hooks/` and `policy/` directories are your files and are not touched; delete
+`~/.doppler` to remove everything.
 
 **Is anything sent anywhere?** No. Nothing leaves the machine. The bridge makes
 exactly one network call, to OpenCode's own server on loopback, to ask it to
@@ -359,7 +365,9 @@ mistaken for a regression.
 
 The bridge is TypeScript and is the only file typed against
 `@opencode-ai/plugin`. What ships is its build output: `npm run build` erases the
-types into `dist/doppler.js`, and that file is what gets registered. Two runtimes
+types into `dist/doppler.js`, and that file is what both registration shapes
+load — the directory entry through `index.js`, the legacy `file://` URL
+naming it directly. Two runtimes
 load plugins — the TUI's Bun and the desktop app's server, which is Node — and
 Node refuses to strip types for a file under `node_modules`, so the source cannot
 be what loads. `erasableSyntaxOnly` keeps the build a pure type-erasure: the

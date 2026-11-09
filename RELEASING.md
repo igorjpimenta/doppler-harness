@@ -59,6 +59,15 @@ repository `igorjpimenta/doppler-harness`, workflow `publish.yml` — the same
 OIDC setup as the core, registered for `@igorjpimenta/doppler-opencode` as
 well. There is no token to store.
 
+Two properties of that entry, both learned the hard way: a freshly created
+(or deleted-and-recreated) entry can take hours before the registry's token
+exchange starts accepting it — dispatches in that window fail with
+`OIDC token exchange error - package not found`, visible only at verbose log,
+which is why the workflow publishes `--loglevel silly` (npm/cli #9923) — and
+the entry must complete its first successful publish within 2 days of
+creation or it expires in a state that cannot be edited; delete it and create
+a new one.
+
 To cut an adapter release without a GitHub Release of its own:
 `gh workflow run publish -f tag=doppler-opencode-<version>` (the existing
 `workflow_dispatch` trigger carries the tag).
@@ -116,22 +125,26 @@ tombstones that `npm view <pkg> versions` omits, and a tombstone is what makes
    npm's own default, unchanged across npm 8 through 11, and nothing in the
    package can set it (npm/cli#6984).
 
-6. Publish to npm, from the tagged tree: `npm publish`. This is what makes
-   `npm install -g @igorjpimenta/doppler-harness` mean "the newest release" with
-   no version in the command — npm's `latest` dist-tag is the registry's answer
-   to the question the alias asset answers on GitHub, and it is native rather
-   than maintained by hand. Requires npm auth on the publishing machine
-   (`npm whoami`; a token via `NPM_TOKEN` in `.npmrc` is the CI form). A version
-   already on the registry cannot be replaced, so a broken publish is fixed by
+6. Publish to npm — automatically, from CI. The release in step 4 fires
+   `.github/workflows/publish.yml`; an adapter release without its own
+   GitHub Release is dispatched by hand (see above). The job exchanges the
+   run's OIDC id-token for a short-lived publish token through the
+   trusted-publisher entry, so no machine ever holds npm credentials. This
+   is what makes `npm install -g @igorjpimenta/doppler-harness` mean "the
+   newest release" with no version in the command — npm's `latest` dist-tag
+   is the registry's answer to the question the alias asset answers on
+   GitHub, and it is native rather than maintained by hand. A version already
+   on the registry cannot be replaced, so a broken publish is fixed by
    cutting the next release, never by re-publishing this one.
 
    The dist-tag follows the version's role, not the calendar: a plain dated
-   release publishes to `latest` (`publishConfig.tag`), and a `-beta.N`
-   publishes under `--tag beta`, so `@latest` keeps pointing at the newest
-   *stable* release. That mirrors what `doppler update` already refuses to do on
-   its own — it will not install a rebuild over its base automatically — and it
-   keeps semver's "a suffix is a prerelease" reading from demoting the whole day
-   to a beta.
+   release publishes to `latest`, and a `-beta.N` publishes under `--tag beta`,
+   so `@latest` keeps pointing at the newest *stable* release. That mirrors
+   what `doppler update` already refuses to do on its own — it will not
+   install a rebuild over its base automatically — and it keeps semver's "a
+   suffix is a prerelease" reading from demoting the whole day to a beta.
+   No beta moves `latest`, in either package: until the first stable exists,
+   `latest` simply holds the last version that held it.
 
 Test counts used to close the re-release notes. They were dropped: a consumer
 cannot act on them, and the number rots the moment someone skips a test.
