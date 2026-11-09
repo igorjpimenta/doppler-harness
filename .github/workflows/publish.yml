@@ -6,13 +6,16 @@
 #
 # Auth is Trusted Publishing (OIDC): npm exchanges this job's id-token for a
 # short-lived publish token. Trusted-publisher entries exist on both packages
-# (repository igorjpimenta/doppler-harness, file publish.yml, manageDistTags
-# included) and both have published through this path — npm logs every exchange
-# failure at verbose only (npm/cli #9923), so publish runs --loglevel silly.
-# NODE_AUTH_TOKEN is pinned empty on the publish and dist-tag steps:
-# setup-node's registry-url leaves an XXXXX placeholder in the job env, and a
-# non-empty token changes the failure from ENEEDAUTH into a PUT 404 that hides
-# the exchange entirely.
+# (repository igorjpimenta/doppler-harness, file publish.yml) and both have
+# published through this path — npm logs every exchange failure at verbose only
+# (npm/cli #9923), so publish runs --loglevel silly.
+# NODE_AUTH_TOKEN is pinned empty on the publish steps: setup-node's
+# registry-url leaves an XXXXX placeholder in the job env, and a non-empty
+# token changes the failure from ENEEDAUTH into a PUT 404 that hides the
+# exchange entirely.
+# No step moves `latest` for a beta: a beta publishes under --tag beta and
+# `latest` holds the newest stable, taken natively by a stable publish. Until
+# the first stable exists, `latest` holds the last version that held it.
 name: publish
 
 on:
@@ -197,17 +200,5 @@ jobs:
       - name: Publish (trusted publishing; silly so a failed exchange is visible)
         if: steps.gate.outputs.skip != 'true'
         run: npm publish --provenance --tag "${{ steps.meta.outputs.dist-tag }}" --loglevel silly
-        env:
-          NODE_AUTH_TOKEN: ""
-
-      # Every adapter release so far is a beta, and the README's versionless
-      # install must resolve the current one — so latest rides along with each
-      # beta, exactly as winch-opencode's workflow does. A stable release takes
-      # latest natively through the publish tag.
-      - name: Point latest at this beta
-        if: steps.meta.outputs.dist-tag == 'beta'
-        run: |
-          set -euo pipefail
-          npm dist-tag add "@igorjpimenta/doppler-opencode@${{ steps.meta.outputs.version }}" latest
         env:
           NODE_AUTH_TOKEN: ""
